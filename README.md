@@ -20,7 +20,7 @@ Managing a personal reading library in Notion is visually rewarding, but manuall
   - Credentials (Kakao, Google, and Notion keys) are encoded into the URL **Hash Fragment** (`#config=...`).
   - Because URL hashes are never transmitted to the web server, your API keys and tokens are never logged in Cloudflare server logs or HTTP referrers.
 - **Notion Schema Auto-Discovery**:
-  - The setup generator inspects your Notion database properties in real time, auto-detecting and mapping Title, Author, Publisher, Publish Date, and ISBN.
+  - The setup generator inspects your Notion Data Source properties in real time, auto-detecting and mapping Title, Author, Publisher, Publish Date, and ISBN.
 - **Duplicate Prevention via ISBN**:
   - Before saving, the widget inspects your Notion database using the ISBN to warn if the title is already present.
 - **Embeddable & Responsive**:

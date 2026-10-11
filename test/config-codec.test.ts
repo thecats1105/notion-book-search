@@ -15,11 +15,12 @@ describe('config-codec', () => {
     expect(decoded).toBe(raw)
   })
 
-  it('should roundtrip full AppConfig correctly', () => {
+  it('should roundtrip full AppConfig correctly with notionDataSourceId', () => {
     const config: AppConfig = {
       kakaoApiKey: 'kakao_key_123',
       googleApiKey: 'google_key_456',
       notionApiKey: 'secret_abc123',
+      notionDataSourceId: '12345678-1234-1234-1234-123456789abc',
       notionDatabaseId: '12345678-1234-1234-1234-123456789abc',
       properties: {
         title: '제목',

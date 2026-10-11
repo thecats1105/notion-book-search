@@ -8,16 +8,17 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const body = (await request.json()) as {
       notionToken?: string
+      dataSourceId?: string
       databaseId?: string
       isbnProperty?: MappedPropertyItem | string
       isbn?: string
     }
 
     const token = body.notionToken?.trim()
-    const databaseId = body.databaseId?.trim()
+    const targetId = body.dataSourceId?.trim() || body.databaseId?.trim()
     const isbn = body.isbn?.trim()
 
-    if (!token || !databaseId || !isbn || !body.isbnProperty) {
+    if (!token || !targetId || !isbn || !body.isbnProperty) {
       return new Response(JSON.stringify({ exists: false }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }
@@ -26,7 +27,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const result = await checkNotionBookExists(
       token,
-      databaseId,
+      targetId,
       body.isbnProperty,
       isbn
     )

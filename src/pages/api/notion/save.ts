@@ -9,22 +9,23 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const body = (await request.json()) as {
       notionToken?: string
+      dataSourceId?: string
       databaseId?: string
       propertyMapping?: NotionPropertyMapping
       book?: BookItem
     }
 
     const token = body.notionToken?.trim()
-    const databaseId = body.databaseId?.trim()
+    const targetId = body.dataSourceId?.trim() || body.databaseId?.trim()
     const propertyMapping = body.propertyMapping
     const book = body.book
 
-    if (!token || !databaseId || !propertyMapping || !book) {
+    if (!token || !targetId || !propertyMapping || !book) {
       return new Response(
         JSON.stringify({
           success: false,
           error:
-            'Missing required payload: token, databaseId, propertyMapping, or book'
+            'Missing required payload: token, dataSourceId/databaseId, propertyMapping, or book'
         }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       )
@@ -32,7 +33,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const result = await saveBookToNotion(
       token,
-      databaseId,
+      targetId,
       propertyMapping,
       book
     )

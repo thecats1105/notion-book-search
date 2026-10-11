@@ -41,7 +41,10 @@ export function decodeConfig(hashPayload: string): AppConfig | null {
     const json = fromUrlSafeBase64(clean)
     const parsed = JSON.parse(json) as AppConfig
 
-    if (!parsed?.notionApiKey || !parsed.notionDatabaseId) {
+    if (
+      !parsed?.notionApiKey ||
+      (!parsed.notionDataSourceId && !parsed.notionDatabaseId)
+    ) {
       return null
     }
 

@@ -39,7 +39,7 @@ const STORAGE_KEY = 'notion_book_search_generator_config_v1'
 export function UrlGenerator() {
   // Notion states
   const [notionToken, setNotionToken] = React.useState('')
-  const [databaseId, setDatabaseId] = React.useState('')
+  const [dataSourceId, setDataSourceId] = React.useState('')
   const [isFetchingSchema, setIsFetchingSchema] = React.useState(false)
   const [schemaResult, setSchemaResult] =
     React.useState<NotionSchemaResult | null>(null)
@@ -89,7 +89,9 @@ export function UrlGenerator() {
         if (saved) {
           const parsed = JSON.parse(saved)
           if (parsed.notionToken) setNotionToken(parsed.notionToken)
-          if (parsed.databaseId) setDatabaseId(parsed.databaseId)
+          if (parsed.dataSourceId || parsed.databaseId) {
+            setDataSourceId(parsed.dataSourceId || parsed.databaseId)
+          }
           if (parsed.kakaoKey) setKakaoKey(parsed.kakaoKey)
           if (parsed.googleKey) setGoogleKey(parsed.googleKey)
           if (parsed.themePref) setThemePref(parsed.themePref)
@@ -126,11 +128,11 @@ export function UrlGenerator() {
   }, [])
 
   // Auto-fetch schema
-  const fetchDatabaseSchema = async () => {
+  const fetchDatabaseSchema = async (targetIdToFetch?: string) => {
     const cleanToken = notionToken.trim()
-    const cleanDb = cleanNotionId(databaseId)
+    const cleanId = cleanNotionId(targetIdToFetch || dataSourceId)
 
-    if (!cleanToken || !cleanDb) return
+    if (!cleanToken || !cleanId) return
 
     setIsFetchingSchema(true)
     setSchemaResult(null)
@@ -141,55 +143,61 @@ export function UrlGenerator() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           notionToken: cleanToken,
-          databaseId: cleanDb
+          dataSourceId: cleanId
         })
       })
 
       const data = (await res.json()) as NotionSchemaResult
       setSchemaResult(data)
 
-      if (data.success && data.properties) {
-        const props = Object.values(data.properties)
+      if (data.success) {
+        if (data.dataSourceId && data.dataSourceId !== dataSourceId) {
+          setDataSourceId(data.dataSourceId)
+        }
 
-        // Auto-match Title
-        const titleMatch = props.find(p => p.type === 'title')
-        if (titleMatch && !titleProp) setTitleProp(titleMatch.name)
+        if (data.properties) {
+          const props = Object.values(data.properties)
 
-        // Auto-match Author
-        const authorMatch = props.find(
-          p =>
-            /저자|지은이|author|creator/i.test(p.name) &&
-            (p.type === 'rich_text' || p.type === 'multi_select')
-        )
-        if (authorMatch && !authorProp) setAuthorProp(authorMatch.name)
+          // Auto-match Title
+          const titleMatch = props.find(p => p.type === 'title')
+          if (titleMatch && !titleProp) setTitleProp(titleMatch.name)
 
-        // Auto-match Publisher
-        const pubMatch = props.find(
-          p =>
-            /출판사|출판|publisher/i.test(p.name) &&
-            (p.type === 'rich_text' || p.type === 'select')
-        )
-        if (pubMatch && !publisherProp) setPublisherProp(pubMatch.name)
+          // Auto-match Author
+          const authorMatch = props.find(
+            p =>
+              /저자|지은이|author|creator/i.test(p.name) &&
+              (p.type === 'rich_text' || p.type === 'multi_select')
+          )
+          if (authorMatch && !authorProp) setAuthorProp(authorMatch.name)
 
-        // Auto-match Date
-        const dateMatch = props.find(
-          p =>
-            /출간일|발행일|날짜|date|published/i.test(p.name) &&
-            (p.type === 'date' || p.type === 'rich_text')
-        )
-        if (dateMatch && !dateProp) setDateProp(dateMatch.name)
+          // Auto-match Publisher
+          const pubMatch = props.find(
+            p =>
+              /출판사|출판|publisher/i.test(p.name) &&
+              (p.type === 'rich_text' || p.type === 'select')
+          )
+          if (pubMatch && !publisherProp) setPublisherProp(pubMatch.name)
 
-        // Auto-match ISBN
-        const isbnMatch = props.find(
-          p =>
-            /isbn/i.test(p.name) &&
-            (p.type === 'rich_text' || p.type === 'number')
-        )
-        if (isbnMatch && !isbnProp) setIsbnProp(isbnMatch.name)
+          // Auto-match Date
+          const dateMatch = props.find(
+            p =>
+              /출간일|발행일|날짜|date|published/i.test(p.name) &&
+              (p.type === 'date' || p.type === 'rich_text')
+          )
+          if (dateMatch && !dateProp) setDateProp(dateMatch.name)
 
-        // Auto-match Files
-        const filesMatch = props.find(p => p.type === 'files')
-        if (filesMatch && !filesProp) setFilesProp(filesMatch.name)
+          // Auto-match ISBN
+          const isbnMatch = props.find(
+            p =>
+              /isbn/i.test(p.name) &&
+              (p.type === 'rich_text' || p.type === 'number')
+          )
+          if (isbnMatch && !isbnProp) setIsbnProp(isbnMatch.name)
+
+          // Auto-match Files
+          const filesMatch = props.find(p => p.type === 'files')
+          if (filesMatch && !filesProp) setFilesProp(filesMatch.name)
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -284,7 +292,8 @@ export function UrlGenerator() {
         ? { name: match.name, type: match.type }
         : { name: propName, type: 'rich_text' }
     }
-    if (!notionToken.trim() || !databaseId.trim() || !titleProp.trim()) {
+
+    if (!notionToken.trim() || !dataSourceId.trim() || !titleProp.trim()) {
       setGeneratedUrl('')
       setLiveConfig(null)
       return
@@ -299,9 +308,11 @@ export function UrlGenerator() {
       coverFilesMedia: filesProp ? getPropertyConfig(filesProp) : undefined
     }
 
+    const cleanId = cleanNotionId(dataSourceId.trim())
     const configPayload: AppConfig = {
       notionApiKey: notionToken.trim(),
-      notionDatabaseId: cleanNotionId(databaseId.trim()),
+      notionDataSourceId: cleanId,
+      notionDatabaseId: cleanId,
       properties,
       kakaoApiKey: kakaoKey.trim() || undefined,
       googleApiKey: googleKey.trim() || undefined,
@@ -323,7 +334,7 @@ export function UrlGenerator() {
           STORAGE_KEY,
           JSON.stringify({
             notionToken: notionToken.trim(),
-            databaseId: databaseId.trim(),
+            dataSourceId: dataSourceId.trim(),
             kakaoKey: kakaoKey.trim(),
             googleKey: googleKey.trim(),
             themePref,
@@ -337,7 +348,7 @@ export function UrlGenerator() {
     }
   }, [
     notionToken,
-    databaseId,
+    dataSourceId,
     titleProp,
     authorProp,
     publisherProp,
@@ -378,8 +389,8 @@ export function UrlGenerator() {
           Notion Book Search Generator
         </h1>
         <p className="text-slate-600 dark:text-slate-400 text-sm max-w-xl mx-auto">
-          Configure your Notion database and book search API keys. Generate a
-          secure, private embed URL with high-definition book covers.
+          Configure your Notion bookshelf and search API keys. Supports Notion
+          Data Source IDs and auto-discovery from Database URLs.
         </p>
       </div>
 
@@ -396,8 +407,8 @@ export function UrlGenerator() {
                   Step 1: Notion Integration Setup
                 </CardTitle>
                 <CardDescription>
-                  Connect your Notion workspace integration and target bookshelf
-                  database
+                  Connect your Notion workspace integration and bookshelf Data
+                  Source ID
                 </CardDescription>
               </div>
             </div>
@@ -440,33 +451,67 @@ export function UrlGenerator() {
               <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">
                 secret_
               </code>
-              . Remember to invite this integration to your database in Notion
+              . Make sure to invite this integration to your database in Notion
               via "..." &rarr; "Connect to".
             </p>
           </div>
 
           <div className="space-y-1.5">
             <label
-              htmlFor="notion-db-input"
+              htmlFor="notion-data-source-input"
               className="text-xs font-semibold text-slate-700 dark:text-slate-300"
             >
-              Notion Database ID or URL <span className="text-rose-500">*</span>
+              Notion Data Source ID (or Database ID / URL){' '}
+              <span className="text-rose-500">*</span>
             </label>
             <Input
-              id="notion-db-input"
+              id="notion-data-source-input"
               type="text"
-              placeholder="e.g. 1a2b3c4d5e6f... or full Notion database URL"
-              value={databaseId}
-              onChange={e => setDatabaseId(e.target.value)}
+              placeholder="Data Source ID (e.g. bc1211ca-e3f1...) or Database URL"
+              value={dataSourceId}
+              onChange={e => setDataSourceId(e.target.value)}
             />
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Notion API (2025-09-03+) manages properties via{' '}
+              <strong>Data Source IDs</strong>. If you enter a Database ID or
+              URL, we automatically discover and resolve its Data Source ID.
+            </p>
           </div>
+
+          {/* Multiple Data Sources Switcher if database contains multiple */}
+          {schemaResult?.availableDataSources &&
+            schemaResult.availableDataSources.length > 1 && (
+              <div className="space-y-1.5 p-3 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800">
+                <label
+                  htmlFor="select-sub-data-source"
+                  className="text-xs font-semibold text-indigo-900 dark:text-indigo-200"
+                >
+                  Multiple Data Sources Detected: Select Target Source
+                </label>
+                <select
+                  id="select-sub-data-source"
+                  value={schemaResult.dataSourceId || ''}
+                  onChange={e => {
+                    setDataSourceId(e.target.value)
+                    fetchDatabaseSchema(e.target.value)
+                  }}
+                  className="w-full h-9 px-2.5 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                >
+                  {schemaResult.availableDataSources.map(ds => (
+                    <option key={ds.id} value={ds.id}>
+                      {ds.name} ({ds.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
           <div className="flex items-center justify-between pt-2">
             <Button
               type="button"
-              onClick={fetchDatabaseSchema}
+              onClick={() => fetchDatabaseSchema()}
               disabled={
-                isFetchingSchema || !notionToken.trim() || !databaseId.trim()
+                isFetchingSchema || !notionToken.trim() || !dataSourceId.trim()
               }
               className="gap-2"
             >
@@ -497,8 +542,14 @@ export function UrlGenerator() {
                 <div className="space-y-1">
                   <div className="font-semibold flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Database: {schemaResult.databaseTitle}</span>
+                    <span>Target: {schemaResult.databaseTitle}</span>
                   </div>
+                  <p className="text-[11px]">
+                    Data Source ID:{' '}
+                    <code className="bg-white/80 dark:bg-slate-800 px-1 py-0.5 rounded font-mono">
+                      {schemaResult.dataSourceId}
+                    </code>
+                  </p>
                   <p className="text-[11px]">
                     Successfully loaded{' '}
                     {Object.keys(schemaResult.properties).length} properties.
@@ -1031,8 +1082,8 @@ export function UrlGenerator() {
             </div>
           ) : (
             <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
-              Please enter your Notion Integration Secret, Database ID, and
-              Title column above to generate your embed link.
+              Please enter your Notion Integration Secret, Data Source ID (or
+              Database ID), and Title column above to generate your embed link.
             </div>
           )}
         </CardContent>

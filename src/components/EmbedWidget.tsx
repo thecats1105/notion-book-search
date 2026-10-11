@@ -170,7 +170,7 @@ export function EmbedWidget({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           notionToken: config.notionApiKey,
-          databaseId: config.notionDatabaseId,
+          dataSourceId: config.notionDataSourceId || config.notionDatabaseId,
           isbnProperty: config.properties.isbn,
           isbn: book.isbn
         })
@@ -197,7 +197,7 @@ export function EmbedWidget({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           notionToken: config.notionApiKey,
-          databaseId: config.notionDatabaseId,
+          dataSourceId: config.notionDataSourceId || config.notionDatabaseId,
           propertyMapping: config.properties,
           book: selectedBook
         })

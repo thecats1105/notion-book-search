@@ -23,10 +23,17 @@ export interface NotionPropertySummary {
   type: NotionPropertyType
 }
 
+export interface NotionDataSourceItem {
+  id: string
+  name: string
+}
+
 export interface NotionSchemaResult {
   success: boolean
+  dataSourceId?: string
   databaseTitle: string
   properties: Record<string, NotionPropertySummary>
+  availableDataSources?: NotionDataSourceItem[]
   error?: string
 }
 

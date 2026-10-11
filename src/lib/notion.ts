@@ -2,12 +2,14 @@ import type { BookItem } from '@/types/book'
 import type { NotionPropertyMapping } from '@/types/config'
 import type {
   NotionCheckResult,
+  NotionDataSourceItem,
   NotionPropertySummary,
   NotionSaveResult,
   NotionSchemaResult
 } from '@/types/notion'
 
-const NOTION_API_VERSION = '2022-06-28'
+const NOTION_DATA_SOURCE_VERSION = '2025-09-03'
+const NOTION_LEGACY_VERSION = '2022-06-28'
 
 export function cleanNotionId(rawId: string): string {
   if (!rawId) return ''
@@ -25,72 +27,189 @@ export function cleanNotionId(rawId: string): string {
   return trimmed
 }
 
-interface RawNotionDatabaseProperty {
+interface RawNotionPropertyItem {
   id: string
   name: string
   type: string
 }
 
-interface RawNotionDatabaseResponse {
+interface RawDataSourceResponse {
+  object: string
   id: string
-  title: Array<{ plain_text?: string }>
-  properties: Record<string, RawNotionDatabaseProperty>
+  name?: string
+  title?: Array<{ plain_text?: string }>
+  properties: Record<string, RawNotionPropertyItem>
+}
+
+interface RawDatabaseResponse {
+  id: string
+  title?: Array<{ plain_text?: string }>
+  data_sources?: Array<{ id: string; name: string }>
+  properties?: Record<string, RawNotionPropertyItem>
 }
 
 export async function fetchNotionDatabaseSchema(
   token: string,
-  databaseId: string
+  rawId: string
 ): Promise<NotionSchemaResult> {
-  const cleanId = cleanNotionId(databaseId)
+  const cleanId = cleanNotionId(rawId)
   if (!token || !cleanId) {
     return {
       success: false,
       databaseTitle: '',
       properties: {},
-      error: 'Notion integration token and Database ID are required'
+      error: 'Notion integration token and Data Source/Database ID are required'
     }
   }
 
+  // 1. First, attempt to retrieve as a Data Source (Notion API 2025-09-03+)
   try {
-    const response = await fetch(
+    const dsRes = await fetch(
+      `https://api.notion.com/v1/data_sources/${cleanId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          'Notion-Version': NOTION_DATA_SOURCE_VERSION
+        }
+      }
+    )
+
+    if (dsRes.ok) {
+      const dsData = (await dsRes.json()) as RawDataSourceResponse
+      const title =
+        dsData.name ||
+        (dsData.title || []).map(t => t.plain_text || '').join('') ||
+        'Notion Data Source'
+
+      const properties: Record<string, NotionPropertySummary> = {}
+      for (const [propName, propVal] of Object.entries(
+        dsData.properties || {}
+      )) {
+        properties[propName] = {
+          id: propVal.id,
+          name: propVal.name || propName,
+          type: propVal.type
+        }
+      }
+
+      return {
+        success: true,
+        dataSourceId: dsData.id || cleanId,
+        databaseTitle: title,
+        properties
+      }
+    }
+  } catch {
+    // Continue to database resolution below
+  }
+
+  // 2. If not a direct data source, check if it is a Database container
+  try {
+    const dbRes = await fetch(
       `https://api.notion.com/v1/databases/${cleanId}`,
       {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token.trim()}`,
-          'Notion-Version': NOTION_API_VERSION
+          'Notion-Version': NOTION_DATA_SOURCE_VERSION
         }
       }
     )
 
-    if (!response.ok) {
-      const errorText = await response.text()
+    if (dbRes.ok) {
+      const dbData = (await dbRes.json()) as RawDatabaseResponse
+      const availableDataSources: NotionDataSourceItem[] =
+        dbData.data_sources || []
+      const dbTitle =
+        (dbData.title || []).map(t => t.plain_text || '').join('') ||
+        'Notion Database'
+
+      // If data_sources exist, fetch properties for the first data source
+      if (availableDataSources.length > 0) {
+        const firstDsId = availableDataSources[0].id
+        const subDsRes = await fetch(
+          `https://api.notion.com/v1/data_sources/${firstDsId}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token.trim()}`,
+              'Notion-Version': NOTION_DATA_SOURCE_VERSION
+            }
+          }
+        )
+
+        if (subDsRes.ok) {
+          const subDsData = (await subDsRes.json()) as RawDataSourceResponse
+          const properties: Record<string, NotionPropertySummary> = {}
+          for (const [propName, propVal] of Object.entries(
+            subDsData.properties || {}
+          )) {
+            properties[propName] = {
+              id: propVal.id,
+              name: propVal.name || propName,
+              type: propVal.type
+            }
+          }
+
+          return {
+            success: true,
+            dataSourceId: firstDsId,
+            databaseTitle: dbTitle,
+            properties,
+            availableDataSources
+          }
+        }
+      }
+    }
+  } catch {
+    // Continue to legacy database fallback
+  }
+
+  // 3. Fallback to legacy database API (2022-06-28)
+  try {
+    const legacyRes = await fetch(
+      `https://api.notion.com/v1/databases/${cleanId}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          'Notion-Version': NOTION_LEGACY_VERSION
+        }
+      }
+    )
+
+    if (legacyRes.ok) {
+      const legacyData = (await legacyRes.json()) as RawDatabaseResponse
+      const dbTitle =
+        (legacyData.title || []).map(t => t.plain_text || '').join('') ||
+        'Notion Database'
+      const properties: Record<string, NotionPropertySummary> = {}
+
+      for (const [propName, propVal] of Object.entries(
+        legacyData.properties || {}
+      )) {
+        properties[propName] = {
+          id: propVal.id,
+          name: propVal.name || propName,
+          type: propVal.type
+        }
+      }
+
       return {
-        success: false,
-        databaseTitle: '',
-        properties: {},
-        error: `Notion API error (${response.status}): ${errorText}`
+        success: true,
+        dataSourceId: cleanId,
+        databaseTitle: dbTitle,
+        properties
       }
     }
 
-    const data = (await response.json()) as RawNotionDatabaseResponse
-    const databaseTitle =
-      (data.title || []).map(t => t.plain_text || '').join('') ||
-      'Untitled Database'
-    const properties: Record<string, NotionPropertySummary> = {}
-
-    for (const [propName, propVal] of Object.entries(data.properties || {})) {
-      properties[propName] = {
-        id: propVal.id,
-        name: propVal.name || propName,
-        type: propVal.type
-      }
-    }
-
+    const errorText = await legacyRes.text()
     return {
-      success: true,
-      databaseTitle,
-      properties
+      success: false,
+      databaseTitle: '',
+      properties: {},
+      error: `Notion API error (${legacyRes.status}): ${errorText}`
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -118,7 +237,7 @@ interface RawNotionQueryResult {
 
 export async function checkNotionBookExists(
   token: string,
-  databaseId: string,
+  targetId: string,
   isbnProperty: { name: string; type?: string } | string | undefined,
   isbn: string
 ): Promise<NotionCheckResult> {
@@ -130,67 +249,100 @@ export async function checkNotionBookExists(
     typeof isbnProperty === 'string' ? isbnProperty : isbnProperty.name
   const propType =
     typeof isbnProperty === 'object' ? isbnProperty.type : 'rich_text'
-  const cleanId = cleanNotionId(databaseId)
+  const cleanId = cleanNotionId(targetId)
 
   if (!token || !cleanId || !propName.trim()) {
     return { exists: false }
   }
 
-  try {
-    const filter =
-      propType === 'number'
-        ? {
-            property: propName,
-            number: {
-              equals: Number(isbn.replace(/\D/g, '')) || 0
-            }
+  const filter =
+    propType === 'number'
+      ? {
+          property: propName,
+          number: {
+            equals: Number(isbn.replace(/\D/g, '')) || 0
           }
-        : {
-            property: propName,
-            rich_text: {
-              equals: isbn.trim()
-            }
+        }
+      : {
+          property: propName,
+          rich_text: {
+            equals: isbn.trim()
           }
+        }
 
-    const response = await fetch(
+  const bodyStr = JSON.stringify({
+    filter,
+    page_size: 1
+  })
+
+  // 1. Try querying data_source endpoint (2025-09-03)
+  try {
+    const dsRes = await fetch(
+      `https://api.notion.com/v1/data_sources/${cleanId}/query`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          'Notion-Version': NOTION_DATA_SOURCE_VERSION,
+          'Content-Type': 'application/json'
+        },
+        body: bodyStr
+      }
+    )
+
+    if (dsRes.ok) {
+      const data = (await dsRes.json()) as RawNotionQueryResult
+      if (data.results && data.results.length > 0) {
+        const found = data.results[0]
+        let pageTitle = ''
+        for (const val of Object.values(found.properties || {})) {
+          if (val.title && Array.isArray(val.title)) {
+            pageTitle = val.title.map(t => t.plain_text || '').join('')
+            break
+          }
+        }
+        return { exists: true, pageUrl: found.url, pageTitle }
+      }
+      return { exists: false }
+    }
+  } catch {
+    // Fallback to database endpoint below
+  }
+
+  // 2. Fallback to database query endpoint
+  try {
+    const dbRes = await fetch(
       `https://api.notion.com/v1/databases/${cleanId}/query`,
       {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token.trim()}`,
-          'Notion-Version': NOTION_API_VERSION,
+          'Notion-Version': NOTION_LEGACY_VERSION,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          filter,
-          page_size: 1
-        })
+        body: bodyStr
       }
     )
 
-    if (!response.ok) {
-      const errorText = await response.text()
+    if (!dbRes.ok) {
+      const errText = await dbRes.text()
       return {
         exists: false,
-        error: `Check query failed (${response.status}): ${errorText}`
+        error: `Query failed (${dbRes.status}): ${errText}`
       }
     }
 
-    const data = (await response.json()) as RawNotionQueryResult
+    const data = (await dbRes.json()) as RawNotionQueryResult
     if (data.results && data.results.length > 0) {
-      const foundPage = data.results[0]
+      const found = data.results[0]
       let pageTitle = ''
-      for (const val of Object.values(foundPage.properties || {})) {
+      for (const val of Object.values(found.properties || {})) {
         if (val.title && Array.isArray(val.title)) {
           pageTitle = val.title.map(t => t.plain_text || '').join('')
           break
         }
       }
-      return {
-        exists: true,
-        pageUrl: foundPage.url,
-        pageTitle
-      }
+      return { exists: true, pageUrl: found.url, pageTitle }
     }
 
     return { exists: false }
@@ -202,16 +354,16 @@ export async function checkNotionBookExists(
 
 export async function saveBookToNotion(
   token: string,
-  databaseId: string,
+  targetId: string,
   propertyMapping: NotionPropertyMapping,
   book: BookItem
 ): Promise<NotionSaveResult> {
-  const cleanId = cleanNotionId(databaseId)
+  const cleanId = cleanNotionId(targetId)
   if (!token || !cleanId || !propertyMapping.title) {
     return {
       success: false,
       error:
-        'Notion token, database ID, and Title property mapping are required'
+        'Notion token, Data Source/Database ID, and Title property mapping are required'
     }
   }
 
@@ -282,7 +434,6 @@ export async function saveBookToNotion(
 
     if (dateType === 'date') {
       let validDate = book.publishedDate.trim()
-      // Normalize YYYY to YYYY-01-01 if required by Notion
       if (/^\d{4}$/.test(validDate)) {
         validDate = `${validDate}-01-01`
       }
@@ -338,42 +489,59 @@ export async function saveBookToNotion(
     }
   }
 
-  const payload: Record<string, unknown> = {
-    parent: { database_id: cleanId },
-    properties: propertiesPayload
-  }
+  const coverPayload = book.thumbnail
+    ? { type: 'external' as const, external: { url: book.thumbnail } }
+    : undefined
 
-  if (book.thumbnail) {
-    payload.cover = {
-      type: 'external',
-      external: { url: book.thumbnail }
-    }
-  }
-
+  // 1. First attempt: create page with parent: { data_source_id: cleanId } (2025-09-03)
   try {
-    const response = await fetch('https://api.notion.com/v1/pages', {
+    const dsRes = await fetch('https://api.notion.com/v1/pages', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token.trim()}`,
-        'Notion-Version': NOTION_API_VERSION,
+        'Notion-Version': NOTION_DATA_SOURCE_VERSION,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        parent: { data_source_id: cleanId },
+        properties: propertiesPayload,
+        cover: coverPayload
+      })
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      return {
-        success: false,
-        error: `Failed to create Notion page (${response.status}): ${errorText}`
-      }
+    if (dsRes.ok) {
+      const data = (await dsRes.json()) as { id: string; url: string }
+      return { success: true, pageId: data.id, pageUrl: data.url }
+    }
+  } catch {
+    // Fallback to database_id below
+  }
+
+  // 2. Fallback attempt: create page with parent: { database_id: cleanId } (2022-06-28)
+  try {
+    const dbRes = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token.trim()}`,
+        'Notion-Version': NOTION_LEGACY_VERSION,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        parent: { database_id: cleanId },
+        properties: propertiesPayload,
+        cover: coverPayload
+      })
+    })
+
+    if (dbRes.ok) {
+      const data = (await dbRes.json()) as { id: string; url: string }
+      return { success: true, pageId: data.id, pageUrl: data.url }
     }
 
-    const data = (await response.json()) as { id: string; url: string }
+    const errorText = await dbRes.text()
     return {
-      success: true,
-      pageId: data.id,
-      pageUrl: data.url
+      success: false,
+      error: `Failed to create Notion page (${dbRes.status}): ${errorText}`
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

@@ -139,7 +139,7 @@ bunx wrangler pages deploy dist
 1. 배포된 웹사이트 주소(`https://<your-domain>.pages.dev/`)에 접속합니다.
 2. **Step 1: 노션 연동 설정**:
    - **Notion 내부 통합 시크릿 토큰**(`secret_...`)을 입력합니다. ([노션 통합 생성 페이지](https://www.notion.so/profile/integrations))
-   - 연동할 서재 **데이터베이스 ID**(또는 노션 DB 전체 URL)를 입력합니다.
+   - 연동할 서재 **데이터 소스 ID (또는 데이터베이스 ID/URL)**(또는 노션 DB 전체 URL)를 입력합니다.
    - **연결 테스트 및 속성 불러오기** 버튼을 누릅니다. (노션 DB의 "..." &rarr; "연결" 메뉴에서 생성한 통합을 먼저 초대해야 합니다)
 3. **Step 2: 데이터베이스 컬럼 매핑**:
    - 제목, 저자, 출판사, 출간일, ISBN 컬럼을 각각 매핑합니다.

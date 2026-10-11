@@ -7,24 +7,26 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const body = (await request.json()) as {
       notionToken?: string
+      dataSourceId?: string
       databaseId?: string
     }
     const token = body.notionToken?.trim()
-    const databaseId = body.databaseId?.trim()
+    const targetId = body.dataSourceId?.trim() || body.databaseId?.trim()
 
-    if (!token || !databaseId) {
+    if (!token || !targetId) {
       return new Response(
         JSON.stringify({
           success: false,
           databaseTitle: '',
           properties: {},
-          error: 'Both Notion integration token and database ID are required'
+          error:
+            'Both Notion integration token and Data Source ID (or Database ID) are required'
         }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       )
     }
 
-    const result = await fetchNotionDatabaseSchema(token, databaseId)
+    const result = await fetchNotionDatabaseSchema(token, targetId)
     return new Response(JSON.stringify(result), {
       status: result.success ? 200 : 400,
       headers: { 'Content-Type': 'application/json' }

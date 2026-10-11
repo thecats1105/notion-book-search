@@ -19,7 +19,8 @@ export interface AppConfig {
   kakaoApiKey?: string
   googleApiKey?: string
   notionApiKey: string
-  notionDatabaseId: string
+  notionDataSourceId?: string
+  notionDatabaseId?: string
   properties: NotionPropertyMapping
   theme?: ThemePreference
   defaultSource?: SearchSourceFilter
