@@ -1,0 +1,11 @@
+---
+import { UrlGenerator } from '@/components/UrlGenerator'
+import Layout from '@/layouts/Layout.astro'
+---
+
+<Layout title="Notion Book Search - Generator & Setup">
+  <main class="min-h-screen py-8">
+    <UrlGenerator client:load />
+  </main>
+</Layout>
+

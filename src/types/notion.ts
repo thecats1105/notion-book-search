@@ -1,0 +1,45 @@
+export type NotionPropertyType =
+  | 'title'
+  | 'rich_text'
+  | 'number'
+  | 'select'
+  | 'multi_select'
+  | 'date'
+  | 'files'
+  | 'checkbox'
+  | 'url'
+  | 'email'
+  | 'phone_number'
+  | 'created_time'
+  | 'created_by'
+  | 'last_edited_time'
+  | 'last_edited_by'
+  | 'status'
+  | string
+
+export interface NotionPropertySummary {
+  id: string
+  name: string
+  type: NotionPropertyType
+}
+
+export interface NotionSchemaResult {
+  success: boolean
+  databaseTitle: string
+  properties: Record<string, NotionPropertySummary>
+  error?: string
+}
+
+export interface NotionCheckResult {
+  exists: boolean
+  pageUrl?: string
+  pageTitle?: string
+  error?: string
+}
+
+export interface NotionSaveResult {
+  success: boolean
+  pageId?: string
+  pageUrl?: string
+  error?: string
+}

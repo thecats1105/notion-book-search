@@ -1,0 +1,23 @@
+# dependencies
+node_modules
+
+# build and cache
+dist
+.astro
+.cache
+*.tsbuildinfo
+
+# env files
+.env
+.env.*
+!.env.example
+
+# logs
+logs
+*.log
+
+# system
+.DS_Store
+Thumbs.db
+
+.wrangler

@@ -1,0 +1,9 @@
+---
+import { EmbedWidget } from '@/components/EmbedWidget'
+import Layout from '@/layouts/Layout.astro'
+---
+
+<Layout title="Notion Book Search Widget">
+  <EmbedWidget client:only="react" standalone={true} />
+</Layout>
+
