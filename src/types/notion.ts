@@ -17,10 +17,17 @@ export type NotionPropertyType =
   | 'status'
   | string
 
+export interface NotionSelectOption {
+  id: string
+  name: string
+  color?: string
+}
+
 export interface NotionPropertySummary {
   id: string
   name: string
   type: NotionPropertyType
+  options?: NotionSelectOption[]
 }
 
 export interface NotionDataSourceItem {

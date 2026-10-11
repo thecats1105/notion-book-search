@@ -7,6 +7,13 @@ export interface MappedPropertyItem {
   type: string
 }
 
+export interface FormatMappingConfig {
+  name: string
+  type: string
+  ebookValue?: string
+  paperValue?: string
+}
+
 export interface NotionPropertyMapping {
   title: string
   author?: MappedPropertyItem | string
@@ -14,7 +21,7 @@ export interface NotionPropertyMapping {
   publishDate?: MappedPropertyItem | string
   isbn?: MappedPropertyItem | string
   coverFilesMedia?: MappedPropertyItem | string
-  format?: MappedPropertyItem | string
+  format?: FormatMappingConfig | MappedPropertyItem | string
 }
 
 export interface TemplateSelection {
@@ -34,6 +41,5 @@ export interface AppConfig {
   theme?: ThemePreference
   defaultSource?: SearchSourceFilter
   lang?: Language
-  proxyImage?: boolean
   insertBodyImage?: boolean
 }

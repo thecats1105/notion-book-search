@@ -58,6 +58,8 @@ export function UrlGenerator() {
   const [isbnProp, setIsbnProp] = React.useState('')
   const [filesProp, setFilesProp] = React.useState('')
   const [formatProp, setFormatProp] = React.useState('')
+  const [ebookOptionVal, setEbookOptionVal] = React.useState('전자책')
+  const [paperOptionVal, setPaperOptionVal] = React.useState('종이책')
   const [templateSelection, setTemplateSelection] =
     React.useState<TemplateSelection>({ type: 'default' })
 
@@ -142,6 +144,12 @@ export function UrlGenerator() {
             setFormatProp(
               parsed.properties.format?.name || parsed.properties.format || ''
             )
+            if (typeof parsed.properties.format === 'object') {
+              if (parsed.properties.format.ebookValue)
+                setEbookOptionVal(parsed.properties.format.ebookValue)
+              if (parsed.properties.format.paperValue)
+                setPaperOptionVal(parsed.properties.format.paperValue)
+            }
           }
         }
       } catch {
@@ -227,7 +235,19 @@ export function UrlGenerator() {
               /형태|구분|종류|분류|format|type/i.test(p.name) &&
               (p.type === 'select' || p.type === 'rich_text')
           )
-          if (formatMatch && !formatProp) setFormatProp(formatMatch.name)
+          if (formatMatch && !formatProp) {
+            setFormatProp(formatMatch.name)
+            if (formatMatch.options && formatMatch.options.length > 0) {
+              const eb = formatMatch.options.find(o =>
+                /ebook|전자/i.test(o.name)
+              )
+              if (eb) setEbookOptionVal(eb.name)
+              const pb = formatMatch.options.find(o =>
+                /종이|단행본|paper/i.test(o.name)
+              )
+              if (pb) setPaperOptionVal(pb.name)
+            }
+          }
         }
 
         // If default template exists, select it
@@ -356,7 +376,14 @@ export function UrlGenerator() {
       publishDate: dateProp ? getPropertyConfig(dateProp) : undefined,
       isbn: isbnProp ? getPropertyConfig(isbnProp) : undefined,
       coverFilesMedia: filesProp ? getPropertyConfig(filesProp) : undefined,
-      format: formatProp ? getPropertyConfig(formatProp) : undefined
+      format: formatProp
+        ? {
+            name: formatProp,
+            type: getPropertyConfig(formatProp)?.type || 'select',
+            ebookValue: ebookOptionVal.trim() || '전자책',
+            paperValue: paperOptionVal.trim() || '종이책'
+          }
+        : undefined
     }
 
     const cleanId = cleanNotionId(dataSourceId.trim())
@@ -414,6 +441,8 @@ export function UrlGenerator() {
     isbnProp,
     filesProp,
     formatProp,
+    ebookOptionVal,
+    paperOptionVal,
     templateSelection,
     kakaoKey,
     googleKey,
@@ -894,6 +923,77 @@ export function UrlGenerator() {
                 />
               )}
             </div>
+
+            {/* Book Format Options Mapping if selected */}
+            {formatProp && (
+              <div className="sm:col-span-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label
+                    htmlFor="ebook-val-input"
+                    className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+                  >
+                    {t.colFormatEbookValue}
+                  </label>
+                  {schemaResult?.properties[formatProp]?.options &&
+                  schemaResult.properties[formatProp].options?.length > 0 ? (
+                    <select
+                      id="ebook-val-input"
+                      value={ebookOptionVal}
+                      onChange={e => setEbookOptionVal(e.target.value)}
+                      className="w-full h-9 px-2.5 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                    >
+                      {schemaResult.properties[formatProp].options?.map(opt => (
+                        <option key={opt.id} value={opt.name}>
+                          {opt.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      id="ebook-val-input"
+                      type="text"
+                      placeholder={t.customValuePlaceholder}
+                      value={ebookOptionVal}
+                      onChange={e => setEbookOptionVal(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label
+                    htmlFor="paper-val-input"
+                    className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+                  >
+                    {t.colFormatPaperValue}
+                  </label>
+                  {schemaResult?.properties[formatProp]?.options &&
+                  schemaResult.properties[formatProp].options?.length > 0 ? (
+                    <select
+                      id="paper-val-input"
+                      value={paperOptionVal}
+                      onChange={e => setPaperOptionVal(e.target.value)}
+                      className="w-full h-9 px-2.5 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                    >
+                      {schemaResult.properties[formatProp].options?.map(opt => (
+                        <option key={opt.id} value={opt.name}>
+                          {opt.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      id="paper-val-input"
+                      type="text"
+                      placeholder={t.customValuePlaceholder}
+                      value={paperOptionVal}
+                      onChange={e => setPaperOptionVal(e.target.value)}
+                      className="h-9 text-xs"
+                    />
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Template Selection */}
             <div className="space-y-1">

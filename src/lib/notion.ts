@@ -89,6 +89,10 @@ interface RawNotionPropertyItem {
   id: string
   name: string
   type: string
+  select?: { options?: Array<{ id: string; name: string; color?: string }> }
+  multi_select?: {
+    options?: Array<{ id: string; name: string; color?: string }>
+  }
 }
 
 interface RawDataSourceResponse {
@@ -603,17 +607,24 @@ export async function saveBookToNotion(
     }
   }
 
-  // Handle Book Format (eBook / Paper Book)
+  // Handle Book Format (eBook / Paper Book) with user-configured mapping values
   if (propertyMapping.format) {
-    const formatName =
-      typeof propertyMapping.format === 'string'
-        ? propertyMapping.format
-        : propertyMapping.format.name
-    const formatType =
-      typeof propertyMapping.format === 'object'
-        ? propertyMapping.format.type
-        : 'select'
-    const formatLabel = book.format === 'ebook' ? '전자책' : '종이책'
+    const isObj = typeof propertyMapping.format === 'object'
+    const formatConfig = isObj
+      ? propertyMapping.format
+      : { name: propertyMapping.format, type: 'select' }
+    const formatName = formatConfig.name
+    const formatType = formatConfig.type || 'select'
+
+    const ebookValue =
+      'ebookValue' in formatConfig && formatConfig.ebookValue
+        ? formatConfig.ebookValue
+        : '전자책'
+    const paperValue =
+      'paperValue' in formatConfig && formatConfig.paperValue
+        ? formatConfig.paperValue
+        : '종이책'
+    const formatLabel = book.format === 'ebook' ? ebookValue : paperValue
 
     if (formatType === 'select') {
       propertiesPayload[formatName] = {

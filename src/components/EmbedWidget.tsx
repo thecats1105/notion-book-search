@@ -639,7 +639,50 @@ export function EmbedWidget({
                     <span className="font-semibold text-slate-700 dark:text-slate-300">
                       {t.format}:{' '}
                     </span>
-                    {selectedBook.format === 'ebook' ? t.ebook : t.paperBook}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedBook(prev =>
+                          prev
+                            ? {
+                                ...prev,
+                                format:
+                                  prev.format === 'ebook' ? 'paper' : 'ebook'
+                              }
+                            : null
+                        )
+                      }}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold border cursor-pointer hover:opacity-80 transition ${
+                        selectedBook.format === 'ebook'
+                          ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                      }`}
+                      title={t.formatChangeNotice}
+                    >
+                      {selectedBook.format === 'ebook' ? (
+                        <>
+                          <Smartphone className="w-3 h-3 text-purple-600" />
+                          <span>
+                            {typeof config?.properties?.format === 'object' &&
+                            'ebookValue' in config.properties.format &&
+                            config.properties.format.ebookValue
+                              ? config.properties.format.ebookValue
+                              : t.ebook}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <BookOpen className="w-3 h-3 text-slate-500" />
+                          <span>
+                            {typeof config?.properties?.format === 'object' &&
+                            'paperValue' in config.properties.format &&
+                            config.properties.format.paperValue
+                              ? config.properties.format.paperValue
+                              : t.paperBook}
+                          </span>
+                        </>
+                      )}
+                    </button>
                   </div>
                   {selectedBook.isbn && (
                     <div className="col-span-2 flex items-center gap-1">

@@ -76,6 +76,10 @@ export const translations = {
     colIsbn: 'ISBN 컬럼 (중복 확인에 사용)',
     colFiles: '표지 이미지 파일 컬럼 (Files & Media)',
     colFormat: '도서 형태 컬럼 (종이책/전자책 구분)',
+    colFormatEbookValue: '전자책(eBook) 매핑 값',
+    colFormatPaperValue: '종이책(Paper) 매핑 값',
+    customValuePlaceholder: '옵션값 직접 입력...',
+    formatChangeNotice: '클릭하여 전자책/종이책을 변경할 수 있습니다',
     colTemplate: '페이지 생성 시 적용할 기본 템플릿',
     coverNotice:
       '* 고화질 표지는 페이지 상단 커버(Cover)와 표지(Files) 컬럼에 모두 깔끔하게 저장됩니다.',
@@ -200,6 +204,10 @@ export const translations = {
     colIsbn: 'ISBN Column (Used for Duplicate Detection)',
     colFiles: 'Cover Image Column (Files & Media)',
     colFormat: 'Book Format Column (eBook / Paper Book)',
+    colFormatEbookValue: 'Option Value for eBook',
+    colFormatPaperValue: 'Option Value for Paper Book',
+    customValuePlaceholder: 'Custom option value...',
+    formatChangeNotice: 'Click to switch between eBook and Paper book',
     colTemplate: 'Default Database Template to Apply',
     coverNotice:
       '* High-res covers are automatically attached to both Page Cover and Files properties.',
