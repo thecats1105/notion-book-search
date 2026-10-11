@@ -104,7 +104,7 @@ bun run dev
 - `bun run dev`: Astro 로컬 개발 서버 실행
 - `bun run build`: Cloudflare Pages용 프로덕션 빌드
 - `bun run preview`: 빌드 결과물 로컬 미리보기
-- `bun run deploy`: 빌드 후 Wrangler를 통해 Cloudflare Pages로 즉시 배포
+- `bun run deploy`: 빌드 후 Wrangler를 통해 Cloudflare로 즉시 배포
 - `bun test`: 유닛 테스트 실행 (도서 썸네일 변환, 인코딩/디코딩, 노션 ID 파싱)
 - `bun run check`: Biome 코드 검사 (린트 및 포맷)
 - `bun run format`: Biome 자동 포맷팅
@@ -128,7 +128,7 @@ bun run dev
 
 ```bash
 bun run build
-bunx wrangler pages deploy dist
+bunx wrangler deploy
 ```
 
 ---

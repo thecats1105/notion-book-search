@@ -10,7 +10,7 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "test": "bun test",
-    "deploy": "bun run build && wrangler pages deploy dist"
+    "deploy": "bun run build && wrangler deploy"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
