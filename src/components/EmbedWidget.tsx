@@ -5,9 +5,11 @@ import {
   CheckCircle2,
   Copy,
   ExternalLink,
+  Globe,
   Loader2,
   Moon,
   Search,
+  Smartphone,
   Sun,
   X
 } from 'lucide-react'
@@ -17,8 +19,13 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { decodeConfig } from '@/lib/config-codec'
+import { type Language, translations } from '@/lib/i18n'
 import type { BookItem } from '@/types/book'
-import type { AppConfig, ThemePreference } from '@/types/config'
+import type {
+  AppConfig,
+  TemplateSelection,
+  ThemePreference
+} from '@/types/config'
 import type { NotionCheckResult } from '@/types/notion'
 
 interface EmbedWidgetProps {
@@ -33,6 +40,7 @@ export function EmbedWidget({
   const [config, setConfig] = React.useState<AppConfig | null>(
     initialConfig || null
   )
+  const [lang, setLang] = React.useState<Language>('ko')
   const [theme, setTheme] = React.useState<ThemePreference>('auto')
   const [isDarkMode, setIsDarkMode] = React.useState(false)
 
@@ -50,6 +58,8 @@ export function EmbedWidget({
   const [isCheckingDuplicate, setIsCheckingDuplicate] = React.useState(false)
   const [duplicateStatus, setDuplicateStatus] =
     React.useState<NotionCheckResult | null>(null)
+  const [selectedTemplate, setSelectedTemplate] =
+    React.useState<TemplateSelection>({ type: 'none' })
   const [isSaving, setIsSaving] = React.useState(false)
   const [saveSuccessUrl, setSaveSuccessUrl] = React.useState<string | null>(
     null
@@ -57,12 +67,16 @@ export function EmbedWidget({
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [copiedIsbn, setCopiedIsbn] = React.useState(false)
 
+  const t = translations[lang]
+
   // Load config from URL hash if not provided via props
   React.useEffect(() => {
     if (initialConfig) {
       setConfig(initialConfig)
+      if (initialConfig.lang) setLang(initialConfig.lang)
       if (initialConfig.theme) setTheme(initialConfig.theme)
       if (initialConfig.defaultSource) setActiveTab(initialConfig.defaultSource)
+      if (initialConfig.template) setSelectedTemplate(initialConfig.template)
       return
     }
 
@@ -70,8 +84,10 @@ export function EmbedWidget({
       const parsed = decodeConfig(window.location.hash)
       if (parsed) {
         setConfig(parsed)
+        if (parsed.lang) setLang(parsed.lang)
         if (parsed.theme) setTheme(parsed.theme)
         if (parsed.defaultSource) setActiveTab(parsed.defaultSource)
+        if (parsed.template) setSelectedTemplate(parsed.template)
       }
     }
   }, [initialConfig])
@@ -109,6 +125,10 @@ export function EmbedWidget({
     } else {
       document.documentElement.classList.remove('dark')
     }
+  }
+
+  const toggleLanguage = () => {
+    setLang(prev => (prev === 'ko' ? 'en' : 'ko'))
   }
 
   const handleSearch = async (e?: React.FormEvent) => {
@@ -158,8 +178,12 @@ export function EmbedWidget({
     setSaveSuccessUrl(null)
     setSaveError(null)
     setCopiedIsbn(false)
+    if (config?.template) {
+      setSelectedTemplate(config.template)
+    }
 
-    if (!config?.properties?.isbn || !book.isbn) {
+    const targetId = config?.notionDataSourceId || config?.notionDatabaseId
+    if (!config?.properties?.isbn || !book.isbn || !targetId) {
       return
     }
 
@@ -170,7 +194,7 @@ export function EmbedWidget({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           notionToken: config.notionApiKey,
-          dataSourceId: config.notionDataSourceId || config.notionDatabaseId,
+          dataSourceId: targetId,
           isbnProperty: config.properties.isbn,
           isbn: book.isbn
         })
@@ -191,22 +215,28 @@ export function EmbedWidget({
     setIsSaving(true)
     setSaveError(null)
 
+    const targetId = config.notionDataSourceId || config.notionDatabaseId
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+
     try {
       const res = await fetch('/api/notion/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           notionToken: config.notionApiKey,
-          dataSourceId: config.notionDataSourceId || config.notionDatabaseId,
+          dataSourceId: targetId,
           propertyMapping: config.properties,
-          book: selectedBook
+          book: selectedBook,
+          template: selectedTemplate,
+          origin,
+          proxyImage: config.proxyImage !== false,
+          insertBodyImage: config.insertBodyImage !== false
         })
       })
 
       const data = await res.json()
       if (res.ok && data.success) {
         setSaveSuccessUrl(data.pageUrl || '')
-        // Refresh duplicate status to mark as existing
         setDuplicateStatus({
           exists: true,
           pageUrl: data.pageUrl,
@@ -237,10 +267,15 @@ export function EmbedWidget({
         <div className="p-3 bg-amber-100 dark:bg-amber-950/60 rounded-full text-amber-600 dark:text-amber-400 mb-3">
           <AlertTriangle className="w-8 h-8" />
         </div>
-        <h2 className="text-lg font-bold">No Notion Configuration Detected</h2>
+        <h2 className="text-lg font-bold">
+          {lang === 'ko'
+            ? '노션 설정이 감지되지 않았습니다'
+            : 'No Notion Configuration Detected'}
+        </h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
-          Please open the URL Generator to configure your Notion database and
-          API keys.
+          {lang === 'ko'
+            ? 'URL 생성기 화면으로 이동하여 노션 데이터베이스 및 API 키를 설정해주세요.'
+            : 'Please open the URL Generator to configure your Notion database and API keys.'}
         </p>
         <Button
           className="mt-4"
@@ -248,7 +283,7 @@ export function EmbedWidget({
             if (typeof window !== 'undefined') window.location.href = '/'
           }}
         >
-          Open URL Generator
+          {lang === 'ko' ? '설정 생성기 열기' : 'Open URL Generator'}
         </Button>
       </div>
     )
@@ -261,7 +296,7 @@ export function EmbedWidget({
       } bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors`}
     >
       {/* Top Header */}
-      <header className="sticky top-0 z-20 backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+      <header className="sticky top-0 z-20 backdrop-blur-md bg-white/85 dark:bg-slate-900/85 border-b border-slate-200 dark:border-slate-800 px-4 py-3">
         <div className="max-w-5xl mx-auto flex flex-col gap-2.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -269,7 +304,7 @@ export function EmbedWidget({
                 <BookOpen className="w-4 h-4" />
               </div>
               <span className="font-bold text-sm tracking-tight hidden sm:inline">
-                Notion Book Search
+                {t.appTitle}
               </span>
             </div>
 
@@ -284,7 +319,7 @@ export function EmbedWidget({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                All
+                {t.tabAll}
               </button>
               <button
                 type="button"
@@ -295,7 +330,7 @@ export function EmbedWidget({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                Kakao
+                {t.tabKakao}
               </button>
               <button
                 type="button"
@@ -306,24 +341,38 @@ export function EmbedWidget({
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                Google
+                {t.tabGoogle}
               </button>
             </div>
 
-            {/* Theme Toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleTheme}
-              aria-label="Toggle dark/light theme"
-              className="text-slate-600 dark:text-slate-400"
-            >
-              {isDarkMode ? (
-                <Sun className="w-4 h-4" />
-              ) : (
-                <Moon className="w-4 h-4" />
-              )}
-            </Button>
+            <div className="flex items-center gap-1">
+              {/* Language Toggle */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleLanguage}
+                aria-label={t.langToggle}
+                className="h-8 px-2 text-xs font-semibold text-slate-600 dark:text-slate-300"
+              >
+                <Globe className="w-3.5 h-3.5 mr-1" />
+                {lang === 'ko' ? '한국어' : 'EN'}
+              </Button>
+
+              {/* Theme Toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleTheme}
+                aria-label={t.themeToggle}
+                className="text-slate-600 dark:text-slate-400 h-8 w-8"
+              >
+                {isDarkMode ? (
+                  <Sun className="w-4 h-4" />
+                ) : (
+                  <Moon className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
           </div>
 
           {/* Search Input Form */}
@@ -335,7 +384,7 @@ export function EmbedWidget({
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
                 type="text"
-                placeholder="Search by title, author, or ISBN..."
+                placeholder={t.searchPlaceholder}
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 className="pl-9 pr-8 h-10 text-sm shadow-xs bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
@@ -358,7 +407,7 @@ export function EmbedWidget({
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                'Search'
+                t.searchButton
               )}
             </Button>
           </form>
@@ -378,7 +427,7 @@ export function EmbedWidget({
         {isLoading && (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-2" />
-            <p className="text-xs">Searching books across providers...</p>
+            <p className="text-xs">{t.searchingText}</p>
           </div>
         )}
 
@@ -389,11 +438,10 @@ export function EmbedWidget({
               <Search className="w-6 h-6" />
             </div>
             <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-              Search for your next book
+              {t.initialSearchTitle}
             </p>
             <p className="text-xs text-slate-400 mt-0.5">
-              Type a book title, author, or ISBN above to add it to your Notion
-              library
+              {t.initialSearchDesc}
             </p>
           </div>
         )}
@@ -405,11 +453,9 @@ export function EmbedWidget({
               <BookOpen className="w-6 h-6" />
             </div>
             <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-              No books found
+              {t.noResultsTitle}
             </p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Try searching with another keyword or ISBN
-            </p>
+            <p className="text-xs text-slate-400 mt-0.5">{t.noResultsDesc}</p>
           </div>
         )}
 
@@ -447,19 +493,29 @@ export function EmbedWidget({
                     <div className="flex flex-col items-center justify-center p-3 text-slate-300 dark:text-slate-600">
                       <BookOpen className="w-8 h-8 mb-1" />
                       <span className="text-[10px] text-center line-clamp-2">
-                        No Cover
+                        {t.noCover}
                       </span>
                     </div>
                   )}
 
-                  {/* Provider Badge */}
-                  <div className="absolute top-2 left-2">
+                  {/* Provider & Format Badges */}
+                  <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
                     <Badge
                       variant={book.source === 'kakao' ? 'kakao' : 'google'}
                       className="text-[10px] px-1.5 py-0.2"
                     >
                       {book.source === 'kakao' ? 'Kakao' : 'Google'}
                     </Badge>
+                    {book.format === 'ebook' ? (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-purple-600 text-white shadow-xs">
+                        <Smartphone className="w-2.5 h-2.5" />
+                        {t.ebook}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-medium bg-slate-800/80 text-slate-100 backdrop-blur-xs">
+                        {t.paperBook}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -469,7 +525,7 @@ export function EmbedWidget({
                     {book.title}
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-1">
-                    {book.authors.join(', ') || 'Unknown author'}
+                    {book.authors.join(', ') || t.unknownAuthor}
                   </p>
                   <div className="mt-auto pt-2 flex items-center justify-between text-[10px] text-slate-400">
                     <span className="truncate max-w-[70%]">
@@ -519,7 +575,7 @@ export function EmbedWidget({
 
               {/* Header Info */}
               <div className="flex-1 min-w-0 flex flex-col">
-                <div className="flex items-center gap-1.5 mb-1.5">
+                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                   <Badge
                     variant={
                       selectedBook.source === 'kakao' ? 'kakao' : 'google'
@@ -530,6 +586,23 @@ export function EmbedWidget({
                       ? 'Kakao Books'
                       : 'Google Books'}
                   </Badge>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${
+                      selectedBook.format === 'ebook'
+                        ? 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800 font-bold'
+                        : 'text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {selectedBook.format === 'ebook' ? (
+                      <span className="flex items-center gap-1">
+                        <Smartphone className="w-3 h-3" />
+                        {t.ebook}
+                      </span>
+                    ) : (
+                      t.paperBook
+                    )}
+                  </Badge>
                   {selectedBook.url && (
                     <a
                       href={selectedBook.url}
@@ -537,7 +610,7 @@ export function EmbedWidget({
                       rel="noopener noreferrer"
                       className="text-[11px] text-slate-400 hover:text-indigo-600 inline-flex items-center gap-0.5 ml-auto"
                     >
-                      Store Link <ExternalLink className="w-3 h-3" />
+                      {t.storeLink} <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                 </div>
@@ -547,26 +620,32 @@ export function EmbedWidget({
                 </DialogTitle>
 
                 <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-1">
-                  {selectedBook.authors.join(', ') || 'Author unknown'}
+                  {selectedBook.authors.join(', ') || t.unknownAuthor}
                 </p>
 
                 <div className="grid grid-cols-2 gap-1.5 mt-2.5 text-xs text-slate-500 dark:text-slate-400">
                   <div>
                     <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      Publisher:{' '}
+                      {t.publisher}:{' '}
                     </span>
                     {selectedBook.publisher || 'N/A'}
                   </div>
                   <div>
                     <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      Date:{' '}
+                      {t.publishDate}:{' '}
                     </span>
                     {selectedBook.publishedDate || 'N/A'}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      {t.format}:{' '}
+                    </span>
+                    {selectedBook.format === 'ebook' ? t.ebook : t.paperBook}
                   </div>
                   {selectedBook.isbn && (
                     <div className="col-span-2 flex items-center gap-1">
                       <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        ISBN:{' '}
+                        {t.isbn}:{' '}
                       </span>
                       <span>{selectedBook.isbn}</span>
                       <button
@@ -591,7 +670,7 @@ export function EmbedWidget({
             {selectedBook.description && (
               <div className="mb-4">
                 <h5 className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Description
+                  {t.description}
                 </h5>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-h-36 overflow-y-auto pr-1 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
                   {selectedBook.description}
@@ -599,22 +678,55 @@ export function EmbedWidget({
               </div>
             )}
 
+            {/* Template Selection */}
+            <div className="mb-4 p-2.5 rounded-lg bg-slate-100/70 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5">
+              <label
+                htmlFor="template-select-modal"
+                className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between"
+              >
+                <span>{t.templateLabel}</span>
+              </label>
+              <select
+                id="template-select-modal"
+                value={
+                  selectedTemplate.type === 'template_id'
+                    ? selectedTemplate.template_id
+                    : selectedTemplate.type
+                }
+                onChange={e => {
+                  const val = e.target.value
+                  if (val === 'none') {
+                    setSelectedTemplate({ type: 'none' })
+                  } else if (val === 'default') {
+                    setSelectedTemplate({ type: 'default' })
+                  } else {
+                    setSelectedTemplate({
+                      type: 'template_id',
+                      template_id: val
+                    })
+                  }
+                }}
+                className="w-full h-8 px-2 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+              >
+                <option value="none">{t.templateNone}</option>
+                <option value="default">{t.templateDefault}</option>
+              </select>
+            </div>
+
             {/* Duplicate Check Notification */}
             {selectedBook.isbn && (
               <div className="mb-4">
                 {isCheckingDuplicate ? (
                   <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
-                    <span>
-                      Checking if already registered in your Notion library...
-                    </span>
+                    <span>{t.checkingDuplicate}</span>
                   </div>
                 ) : duplicateStatus?.exists ? (
                   <div className="flex items-center justify-between p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
                       <span>
-                        Already in your library:{' '}
+                        {t.alreadyInLibrary}:{' '}
                         <strong>
                           {duplicateStatus.pageTitle || selectedBook.title}
                         </strong>
@@ -627,14 +739,14 @@ export function EmbedWidget({
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 ml-2"
                       >
-                        Open <ExternalLink className="w-3 h-3" />
+                        {t.viewInNotion} <ExternalLink className="w-3 h-3" />
                       </a>
                     )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                    <span>Not in your library yet</span>
+                    <span>{t.notInLibrary}</span>
                   </div>
                 )}
               </div>
@@ -652,9 +764,7 @@ export function EmbedWidget({
               <div className="mb-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span className="font-medium">
-                    Successfully added to your Notion library!
-                  </span>
+                  <span className="font-medium">{t.saveSuccess}</span>
                 </div>
                 <a
                   href={saveSuccessUrl}
@@ -662,7 +772,7 @@ export function EmbedWidget({
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
                 >
-                  View in Notion <ExternalLink className="w-3 h-3" />
+                  {t.viewInNotion} <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
             )}
@@ -675,7 +785,7 @@ export function EmbedWidget({
                 onClick={() => setSelectedBook(null)}
                 disabled={isSaving}
               >
-                Close
+                {t.closeButton}
               </Button>
               <Button
                 size="sm"
@@ -690,12 +800,12 @@ export function EmbedWidget({
                 {isSaving ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-                    Saving...
+                    {t.savingToNotion}
                   </>
                 ) : duplicateStatus?.exists ? (
-                  'Add Again (Duplicate)'
+                  t.addDuplicateAnyway
                 ) : (
-                  'Add to Notion'
+                  t.addToNotion
                 )}
               </Button>
             </div>

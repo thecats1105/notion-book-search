@@ -1,20 +1,21 @@
 import type { BookItem } from '@/types/book'
-import type { NotionPropertyMapping } from '@/types/config'
+import type { NotionPropertyMapping, TemplateSelection } from '@/types/config'
 import type {
   NotionCheckResult,
   NotionDataSourceItem,
   NotionPropertySummary,
   NotionSaveResult,
-  NotionSchemaResult
+  NotionSchemaResult,
+  NotionTemplateSummary
 } from '@/types/notion'
 
 const NOTION_DATA_SOURCE_VERSION = '2025-09-03'
+const NOTION_TEMPLATE_VERSION = '2026-03-11'
 const NOTION_LEGACY_VERSION = '2022-06-28'
 
 export function cleanNotionId(rawId: string): string {
   if (!rawId) return ''
   const trimmed = rawId.trim()
-  // Extract 32-character hex if full URL or dirty string
   const urlMatch = trimmed.match(/([a-f0-9]{32})/i)
   if (urlMatch) {
     const h = urlMatch[1]
@@ -48,6 +49,53 @@ interface RawDatabaseResponse {
   properties?: Record<string, RawNotionPropertyItem>
 }
 
+interface RawTemplateResponseItem {
+  id: string
+  name?: string
+  title?: Array<{ plain_text?: string }>
+  is_default?: boolean
+}
+
+export async function fetchNotionTemplates(
+  token: string,
+  dataSourceId: string
+): Promise<NotionTemplateSummary[]> {
+  const cleanId = cleanNotionId(dataSourceId)
+  if (!token || !cleanId) return []
+
+  try {
+    const res = await fetch(
+      `https://api.notion.com/v1/data_sources/${cleanId}/templates`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          'Notion-Version': NOTION_TEMPLATE_VERSION
+        }
+      }
+    )
+
+    if (!res.ok) return []
+
+    const data = (await res.json()) as { results?: RawTemplateResponseItem[] }
+    const items = data.results || []
+
+    return items.map(t => {
+      const name =
+        t.name ||
+        (t.title || []).map(p => p.plain_text || '').join('') ||
+        'Untitled Template'
+      return {
+        id: t.id,
+        name,
+        isDefault: Boolean(t.is_default)
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
 export async function fetchNotionDatabaseSchema(
   token: string,
   rawId: string
@@ -62,7 +110,7 @@ export async function fetchNotionDatabaseSchema(
     }
   }
 
-  // 1. First, attempt to retrieve as a Data Source (Notion API 2025-09-03+)
+  // 1. Direct Data Source lookup (2025-09-03)
   try {
     const dsRes = await fetch(
       `https://api.notion.com/v1/data_sources/${cleanId}`,
@@ -93,18 +141,21 @@ export async function fetchNotionDatabaseSchema(
         }
       }
 
+      const templates = await fetchNotionTemplates(token, cleanId)
+
       return {
         success: true,
         dataSourceId: dsData.id || cleanId,
         databaseTitle: title,
-        properties
+        properties,
+        templates
       }
     }
   } catch {
-    // Continue to database resolution below
+    // Continue to database resolution
   }
 
-  // 2. If not a direct data source, check if it is a Database container
+  // 2. Database container lookup (2025-09-03)
   try {
     const dbRes = await fetch(
       `https://api.notion.com/v1/databases/${cleanId}`,
@@ -125,7 +176,6 @@ export async function fetchNotionDatabaseSchema(
         (dbData.title || []).map(t => t.plain_text || '').join('') ||
         'Notion Database'
 
-      // If data_sources exist, fetch properties for the first data source
       if (availableDataSources.length > 0) {
         const firstDsId = availableDataSources[0].id
         const subDsRes = await fetch(
@@ -152,18 +202,21 @@ export async function fetchNotionDatabaseSchema(
             }
           }
 
+          const templates = await fetchNotionTemplates(token, firstDsId)
+
           return {
             success: true,
             dataSourceId: firstDsId,
             databaseTitle: dbTitle,
             properties,
-            availableDataSources
+            availableDataSources,
+            templates
           }
         }
       }
     }
   } catch {
-    // Continue to legacy database fallback
+    // Continue to legacy fallback
   }
 
   // 3. Fallback to legacy database API (2022-06-28)
@@ -200,7 +253,8 @@ export async function fetchNotionDatabaseSchema(
         success: true,
         dataSourceId: cleanId,
         databaseTitle: dbTitle,
-        properties
+        properties,
+        templates: []
       }
     }
 
@@ -275,7 +329,7 @@ export async function checkNotionBookExists(
     page_size: 1
   })
 
-  // 1. Try querying data_source endpoint (2025-09-03)
+  // 1. Data source query (2025-09-03)
   try {
     const dsRes = await fetch(
       `https://api.notion.com/v1/data_sources/${cleanId}/query`,
@@ -306,10 +360,10 @@ export async function checkNotionBookExists(
       return { exists: false }
     }
   } catch {
-    // Fallback to database endpoint below
+    // Continue to fallback
   }
 
-  // 2. Fallback to database query endpoint
+  // 2. Legacy database query fallback
   try {
     const dbRes = await fetch(
       `https://api.notion.com/v1/databases/${cleanId}/query`,
@@ -352,11 +406,19 @@ export async function checkNotionBookExists(
   }
 }
 
+export interface SaveBookOptions {
+  template?: TemplateSelection
+  origin?: string
+  proxyImage?: boolean
+  insertBodyImage?: boolean
+}
+
 export async function saveBookToNotion(
   token: string,
   targetId: string,
   propertyMapping: NotionPropertyMapping,
-  book: BookItem
+  book: BookItem,
+  options?: SaveBookOptions
 ): Promise<NotionSaveResult> {
   const cleanId = cleanNotionId(targetId)
   if (!token || !cleanId || !propertyMapping.title) {
@@ -365,6 +427,15 @@ export async function saveBookToNotion(
       error:
         'Notion token, Data Source/Database ID, and Title property mapping are required'
     }
+  }
+
+  // Determine cover URL:
+  // Using the Cloudflare Pages proxy (/api/cover.jpg?url=...) ensures Notion recognizes the URL as an image
+  // file with .jpg extension, rendering true image previews in Gallery/Files properties instead of document icons!
+  let coverUrl = book.thumbnail
+  if (options?.proxyImage !== false && options?.origin && book.thumbnail) {
+    const cleanOrigin = options.origin.replace(/\/+$/, '')
+    coverUrl = `${cleanOrigin}/api/cover.jpg?url=${encodeURIComponent(book.thumbnail)}`
   }
 
   const propertiesPayload: Record<string, unknown> = {
@@ -472,8 +543,31 @@ export async function saveBookToNotion(
     }
   }
 
+  // Handle Book Format (eBook / Paper Book)
+  if (propertyMapping.format) {
+    const formatName =
+      typeof propertyMapping.format === 'string'
+        ? propertyMapping.format
+        : propertyMapping.format.name
+    const formatType =
+      typeof propertyMapping.format === 'object'
+        ? propertyMapping.format.type
+        : 'select'
+    const formatLabel = book.format === 'ebook' ? '전자책' : '종이책'
+
+    if (formatType === 'select') {
+      propertiesPayload[formatName] = {
+        select: { name: formatLabel }
+      }
+    } else {
+      propertiesPayload[formatName] = {
+        rich_text: [{ text: { content: formatLabel } }]
+      }
+    }
+  }
+
   // Handle Cover in Files property
-  if (propertyMapping.coverFilesMedia && book.thumbnail) {
+  if (propertyMapping.coverFilesMedia && coverUrl) {
     const filesName =
       typeof propertyMapping.coverFilesMedia === 'string'
         ? propertyMapping.coverFilesMedia
@@ -483,18 +577,61 @@ export async function saveBookToNotion(
         {
           name: `cover-${book.isbn || 'book'}.jpg`,
           type: 'external',
-          external: { url: book.thumbnail }
+          external: { url: coverUrl }
         }
       ]
     }
   }
 
-  const coverPayload = book.thumbnail
-    ? { type: 'external' as const, external: { url: book.thumbnail } }
-    : undefined
+  const payload: Record<string, unknown> = {
+    properties: propertiesPayload
+  }
+
+  if (coverUrl) {
+    payload.cover = {
+      type: 'external',
+      external: { url: coverUrl }
+    }
+  }
+
+  // Handle Template vs Children
+  const templateConfig = options?.template
+  const hasTemplate = templateConfig?.type && templateConfig.type !== 'none'
+
+  if (hasTemplate) {
+    if (templateConfig.type === 'default') {
+      payload.template = { type: 'default' }
+    } else if (
+      templateConfig.type === 'template_id' &&
+      templateConfig.template_id
+    ) {
+      payload.template = {
+        type: 'template_id',
+        template_id: templateConfig.template_id
+      }
+    }
+    // Notion API rule: When applying a template, children parameter must NOT be included!
+  } else if (options?.insertBodyImage !== false && coverUrl) {
+    // Insert cover image into page body so views with 'Page content' card preview display it
+    payload.children = [
+      {
+        object: 'block',
+        type: 'image',
+        image: {
+          type: 'external',
+          external: { url: coverUrl }
+        }
+      }
+    ]
+  }
 
   // 1. First attempt: create page with parent: { data_source_id: cleanId } (2025-09-03)
   try {
+    const dsPayload = {
+      ...payload,
+      parent: { data_source_id: cleanId }
+    }
+
     const dsRes = await fetch('https://api.notion.com/v1/pages', {
       method: 'POST',
       headers: {
@@ -502,11 +639,7 @@ export async function saveBookToNotion(
         'Notion-Version': NOTION_DATA_SOURCE_VERSION,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        parent: { data_source_id: cleanId },
-        properties: propertiesPayload,
-        cover: coverPayload
-      })
+      body: JSON.stringify(dsPayload)
     })
 
     if (dsRes.ok) {
@@ -514,11 +647,20 @@ export async function saveBookToNotion(
       return { success: true, pageId: data.id, pageUrl: data.url }
     }
   } catch {
-    // Fallback to database_id below
+    // Fallback to database_id
   }
 
   // 2. Fallback attempt: create page with parent: { database_id: cleanId } (2022-06-28)
   try {
+    // Legacy API does not support template parameter
+    const legacyPayload = { ...payload }
+    delete legacyPayload.template
+
+    const dbPayload = {
+      ...legacyPayload,
+      parent: { database_id: cleanId }
+    }
+
     const dbRes = await fetch('https://api.notion.com/v1/pages', {
       method: 'POST',
       headers: {
@@ -526,11 +668,7 @@ export async function saveBookToNotion(
         'Notion-Version': NOTION_LEGACY_VERSION,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        parent: { database_id: cleanId },
-        properties: propertiesPayload,
-        cover: coverPayload
-      })
+      body: JSON.stringify(dbPayload)
     })
 
     if (dbRes.ok) {

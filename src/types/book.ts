@@ -1,13 +1,16 @@
 export type BookSource = 'kakao' | 'google'
+export type BookFormat = 'paper' | 'ebook'
 
 export interface BookItem {
   id: string
   source: BookSource
+  format: BookFormat
   title: string
   authors: string[]
   publisher: string
   publishedDate: string
   isbn: string
+  rawIsbn?: string
   thumbnail: string
   originalThumbnail?: string
   description: string
@@ -64,6 +67,9 @@ export interface GoogleBookVolumeInfo {
 export interface GoogleBookItemRaw {
   id: string
   volumeInfo?: GoogleBookVolumeInfo
+  saleInfo?: {
+    isEbook?: boolean
+  }
 }
 
 export interface GoogleSearchResponse {

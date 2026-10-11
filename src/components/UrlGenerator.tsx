@@ -6,6 +6,7 @@ import {
   Database,
   ExternalLink,
   Eye,
+  Globe,
   Key,
   Loader2,
   RefreshCw,
@@ -25,11 +26,13 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { encodeConfig } from '@/lib/config-codec'
+import { type Language, translations } from '@/lib/i18n'
 import { cleanNotionId } from '@/lib/notion'
 import type {
   AppConfig,
   NotionPropertyMapping,
   SearchSourceFilter,
+  TemplateSelection,
   ThemePreference
 } from '@/types/config'
 import type { NotionSchemaResult } from '@/types/notion'
@@ -37,6 +40,9 @@ import type { NotionSchemaResult } from '@/types/notion'
 const STORAGE_KEY = 'notion_book_search_generator_config_v1'
 
 export function UrlGenerator() {
+  const [lang, setLang] = React.useState<Language>('ko')
+  const t = translations[lang]
+
   // Notion states
   const [notionToken, setNotionToken] = React.useState('')
   const [dataSourceId, setDataSourceId] = React.useState('')
@@ -51,6 +57,9 @@ export function UrlGenerator() {
   const [dateProp, setDateProp] = React.useState('')
   const [isbnProp, setIsbnProp] = React.useState('')
   const [filesProp, setFilesProp] = React.useState('')
+  const [formatProp, setFormatProp] = React.useState('')
+  const [templateSelection, setTemplateSelection] =
+    React.useState<TemplateSelection>({ type: 'default' })
 
   // Search API keys
   const [kakaoKey, setKakaoKey] = React.useState('')
@@ -72,6 +81,8 @@ export function UrlGenerator() {
   const [themePref, setThemePref] = React.useState<ThemePreference>('auto')
   const [defaultSource, setDefaultSource] =
     React.useState<SearchSourceFilter>('all')
+  const [proxyImage, setProxyImage] = React.useState(true)
+  const [insertBodyImage, setInsertBodyImage] = React.useState(true)
   const [rememberLocal, setRememberLocal] = React.useState(true)
 
   // Output states
@@ -79,6 +90,10 @@ export function UrlGenerator() {
   const [hasCopied, setHasCopied] = React.useState(false)
   const [liveConfig, setLiveConfig] = React.useState<AppConfig | null>(null)
   const [origin, setOrigin] = React.useState('')
+
+  const toggleLanguage = () => {
+    setLang(prev => (prev === 'ko' ? 'en' : 'ko'))
+  }
 
   // Load saved state on mount
   React.useEffect(() => {
@@ -88,6 +103,7 @@ export function UrlGenerator() {
         const saved = localStorage.getItem(STORAGE_KEY)
         if (saved) {
           const parsed = JSON.parse(saved)
+          if (parsed.lang) setLang(parsed.lang)
           if (parsed.notionToken) setNotionToken(parsed.notionToken)
           if (parsed.dataSourceId || parsed.databaseId) {
             setDataSourceId(parsed.dataSourceId || parsed.databaseId)
@@ -96,6 +112,13 @@ export function UrlGenerator() {
           if (parsed.googleKey) setGoogleKey(parsed.googleKey)
           if (parsed.themePref) setThemePref(parsed.themePref)
           if (parsed.defaultSource) setDefaultSource(parsed.defaultSource)
+          if (typeof parsed.proxyImage === 'boolean') {
+            setProxyImage(parsed.proxyImage)
+          }
+          if (typeof parsed.insertBodyImage === 'boolean') {
+            setInsertBodyImage(parsed.insertBodyImage)
+          }
+          if (parsed.template) setTemplateSelection(parsed.template)
           if (parsed.properties) {
             setTitleProp(parsed.properties.title || '')
             setAuthorProp(
@@ -119,6 +142,9 @@ export function UrlGenerator() {
                 parsed.properties.coverFilesMedia ||
                 ''
             )
+            setFormatProp(
+              parsed.properties.format?.name || parsed.properties.format || ''
+            )
           }
         }
       } catch {
@@ -127,7 +153,7 @@ export function UrlGenerator() {
     }
   }, [])
 
-  // Auto-fetch schema
+  // Auto-fetch schema & templates
   const fetchDatabaseSchema = async (targetIdToFetch?: string) => {
     const cleanToken = notionToken.trim()
     const cleanId = cleanNotionId(targetIdToFetch || dataSourceId)
@@ -197,6 +223,26 @@ export function UrlGenerator() {
           // Auto-match Files
           const filesMatch = props.find(p => p.type === 'files')
           if (filesMatch && !filesProp) setFilesProp(filesMatch.name)
+
+          // Auto-match Format
+          const formatMatch = props.find(
+            p =>
+              /형태|구분|종류|분류|format|type/i.test(p.name) &&
+              (p.type === 'select' || p.type === 'rich_text')
+          )
+          if (formatMatch && !formatProp) setFormatProp(formatMatch.name)
+        }
+
+        // If default template exists, select it
+        if (data.templates && data.templates.length > 0) {
+          const def = data.templates.find(t => t.isDefault)
+          if (def) {
+            setTemplateSelection({
+              type: 'template_id',
+              template_id: def.id,
+              name: def.name
+            })
+          }
         }
       }
     } catch (err) {
@@ -222,7 +268,7 @@ export function UrlGenerator() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: 'Clean Code',
+          query: '클린 코드',
           source: 'kakao',
           kakaoApiKey: kakaoKey.trim()
         })
@@ -231,7 +277,10 @@ export function UrlGenerator() {
       if (res.ok && data.items?.length > 0) {
         setKakaoTestStatus({
           success: true,
-          message: `Connected successfully! Found ${data.items.length} books.`
+          message:
+            lang === 'ko'
+              ? `연결 성공! ${data.items.length}권의 도서가 검색되었습니다.`
+              : `Connected successfully! Found ${data.items.length} books.`
         })
       } else {
         setKakaoTestStatus({
@@ -249,6 +298,7 @@ export function UrlGenerator() {
 
   // Test Google Books API
   const testGoogleApi = async () => {
+    if (!googleKey.trim()) return
     setIsTestingGoogle(true)
     setGoogleTestStatus(null)
     try {
@@ -265,7 +315,10 @@ export function UrlGenerator() {
       if (res.ok && data.items?.length > 0) {
         setGoogleTestStatus({
           success: true,
-          message: `Connected successfully! Found ${data.items.length} books.`
+          message:
+            lang === 'ko'
+              ? `연결 성공! ${data.items.length}권의 도서가 검색되었습니다.`
+              : `Connected successfully! Found ${data.items.length} books.`
         })
       } else {
         setGoogleTestStatus({
@@ -305,7 +358,8 @@ export function UrlGenerator() {
       publisher: publisherProp ? getPropertyConfig(publisherProp) : undefined,
       publishDate: dateProp ? getPropertyConfig(dateProp) : undefined,
       isbn: isbnProp ? getPropertyConfig(isbnProp) : undefined,
-      coverFilesMedia: filesProp ? getPropertyConfig(filesProp) : undefined
+      coverFilesMedia: filesProp ? getPropertyConfig(filesProp) : undefined,
+      format: formatProp ? getPropertyConfig(formatProp) : undefined
     }
 
     const cleanId = cleanNotionId(dataSourceId.trim())
@@ -314,10 +368,14 @@ export function UrlGenerator() {
       notionDataSourceId: cleanId,
       notionDatabaseId: cleanId,
       properties,
+      template: templateSelection,
       kakaoApiKey: kakaoKey.trim() || undefined,
       googleApiKey: googleKey.trim() || undefined,
       theme: themePref,
-      defaultSource
+      defaultSource,
+      lang,
+      proxyImage,
+      insertBodyImage
     }
 
     setLiveConfig(configPayload)
@@ -333,12 +391,16 @@ export function UrlGenerator() {
         localStorage.setItem(
           STORAGE_KEY,
           JSON.stringify({
+            lang,
             notionToken: notionToken.trim(),
             dataSourceId: dataSourceId.trim(),
             kakaoKey: kakaoKey.trim(),
             googleKey: googleKey.trim(),
             themePref,
             defaultSource,
+            proxyImage,
+            insertBodyImage,
+            template: templateSelection,
             properties
           })
         )
@@ -347,6 +409,7 @@ export function UrlGenerator() {
       }
     }
   }, [
+    lang,
     notionToken,
     dataSourceId,
     titleProp,
@@ -355,10 +418,14 @@ export function UrlGenerator() {
     dateProp,
     isbnProp,
     filesProp,
+    formatProp,
+    templateSelection,
     kakaoKey,
     googleKey,
     themePref,
     defaultSource,
+    proxyImage,
+    insertBodyImage,
     rememberLocal,
     origin,
     schemaResult
@@ -380,17 +447,28 @@ export function UrlGenerator() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
       {/* Intro Header */}
-      <div className="text-center space-y-2">
+      <div className="text-center space-y-2 relative">
+        <div className="absolute right-0 top-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleLanguage}
+            className="gap-1.5 text-xs font-semibold"
+          >
+            <Globe className="w-3.5 h-3.5" />
+            {lang === 'ko' ? 'English' : '한국어'}
+          </Button>
+        </div>
+
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-semibold mb-1">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Notion Book Library Widget Setup</span>
+          <span>{t.appSubtitle}</span>
         </div>
         <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 sm:text-4xl">
-          Notion Book Search Generator
+          {t.appTitle}
         </h1>
         <p className="text-slate-600 dark:text-slate-400 text-sm max-w-xl mx-auto">
-          Configure your Notion bookshelf and search API keys. Supports Notion
-          Data Source IDs and auto-discovery from Database URLs.
+          {t.appDescription}
         </p>
       </div>
 
@@ -403,18 +481,13 @@ export function UrlGenerator() {
                 <Database className="w-5 h-5" />
               </div>
               <div>
-                <CardTitle className="text-lg">
-                  Step 1: Notion Integration Setup
-                </CardTitle>
-                <CardDescription>
-                  Connect your Notion workspace integration and bookshelf Data
-                  Source ID
-                </CardDescription>
+                <CardTitle className="text-lg">{t.step1Title}</CardTitle>
+                <CardDescription>{t.step1Desc}</CardDescription>
               </div>
             </div>
             {schemaResult?.success && (
               <Badge variant="success" className="gap-1">
-                <CheckCircle2 className="w-3 h-3" /> Connected
+                <CheckCircle2 className="w-3 h-3" /> {t.notionConnectedBadge}
               </Badge>
             )}
           </div>
@@ -427,8 +500,7 @@ export function UrlGenerator() {
                 htmlFor="notion-token-input"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                Notion Internal Integration Secret Token{' '}
-                <span className="text-rose-500">*</span>
+                {t.notionTokenLabel} <span className="text-rose-500">*</span>
               </label>
               <a
                 href="https://www.notion.so/profile/integrations"
@@ -436,7 +508,7 @@ export function UrlGenerator() {
                 rel="noopener noreferrer"
                 className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5"
               >
-                Create Integration <ExternalLink className="w-3 h-3" />
+                {t.createIntegrationLink} <ExternalLink className="w-3 h-3" />
               </a>
             </div>
             <Input
@@ -447,12 +519,7 @@ export function UrlGenerator() {
               onChange={e => setNotionToken(e.target.value)}
             />
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Must start with{' '}
-              <code className="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">
-                secret_
-              </code>
-              . Make sure to invite this integration to your database in Notion
-              via "..." &rarr; "Connect to".
+              {t.notionTokenHelp}
             </p>
           </div>
 
@@ -461,8 +528,7 @@ export function UrlGenerator() {
               htmlFor="notion-data-source-input"
               className="text-xs font-semibold text-slate-700 dark:text-slate-300"
             >
-              Notion Data Source ID (or Database ID / URL){' '}
-              <span className="text-rose-500">*</span>
+              {t.dataSourceIdLabel} <span className="text-rose-500">*</span>
             </label>
             <Input
               id="notion-data-source-input"
@@ -472,13 +538,11 @@ export function UrlGenerator() {
               onChange={e => setDataSourceId(e.target.value)}
             />
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Notion API (2025-09-03+) manages properties via{' '}
-              <strong>Data Source IDs</strong>. If you enter a Database ID or
-              URL, we automatically discover and resolve its Data Source ID.
+              {t.dataSourceIdHelp}
             </p>
           </div>
 
-          {/* Multiple Data Sources Switcher if database contains multiple */}
+          {/* Multiple Data Sources Switcher */}
           {schemaResult?.availableDataSources &&
             schemaResult.availableDataSources.length > 1 && (
               <div className="space-y-1.5 p-3 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800">
@@ -486,7 +550,7 @@ export function UrlGenerator() {
                   htmlFor="select-sub-data-source"
                   className="text-xs font-semibold text-indigo-900 dark:text-indigo-200"
                 >
-                  Multiple Data Sources Detected: Select Target Source
+                  {t.multipleDataSourcesTitle}
                 </label>
                 <select
                   id="select-sub-data-source"
@@ -518,12 +582,12 @@ export function UrlGenerator() {
               {isFetchingSchema ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Testing & Loading Schema...
+                  {t.testingNotionButton}
                 </>
               ) : (
                 <>
                   <RefreshCw className="w-4 h-4" />
-                  Test Connection & Fetch Properties
+                  {t.testNotionButton}
                 </>
               )}
             </Button>
@@ -542,7 +606,10 @@ export function UrlGenerator() {
                 <div className="space-y-1">
                   <div className="font-semibold flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Target: {schemaResult.databaseTitle}</span>
+                    <span>
+                      {lang === 'ko' ? '서재 데이터베이스' : 'Database'}:{' '}
+                      {schemaResult.databaseTitle}
+                    </span>
                   </div>
                   <p className="text-[11px]">
                     Data Source ID:{' '}
@@ -551,9 +618,9 @@ export function UrlGenerator() {
                     </code>
                   </p>
                   <p className="text-[11px]">
-                    Successfully loaded{' '}
-                    {Object.keys(schemaResult.properties).length} properties.
-                    Check Step 2 below to map columns.
+                    {lang === 'ko'
+                      ? `총 ${Object.keys(schemaResult.properties).length}개의 속성 컬럼과 ${(schemaResult.templates || []).length}개의 템플릿을 불러왔습니다.`
+                      : `Loaded ${Object.keys(schemaResult.properties).length} properties and ${(schemaResult.templates || []).length} templates.`}
                   </p>
                 </div>
               ) : (
@@ -575,12 +642,8 @@ export function UrlGenerator() {
               <Sliders className="w-5 h-5" />
             </div>
             <div>
-              <CardTitle className="text-lg">
-                Step 2: Database Column Mapping
-              </CardTitle>
-              <CardDescription>
-                Map book attributes to your Notion database properties
-              </CardDescription>
+              <CardTitle className="text-lg">{t.step2Title}</CardTitle>
+              <CardDescription>{t.step2Desc}</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -593,8 +656,7 @@ export function UrlGenerator() {
                 htmlFor="title-prop-select"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                Book Title Column (Title type){' '}
-                <span className="text-rose-500">*</span>
+                {t.colTitle} <span className="text-rose-500">*</span>
               </label>
               {propList.length > 0 ? (
                 <select
@@ -603,7 +665,11 @@ export function UrlGenerator() {
                   onChange={e => setTitleProp(e.target.value)}
                   className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                 >
-                  <option value="">Select Title column</option>
+                  <option value="">
+                    {lang === 'ko'
+                      ? '제목 컬럼을 선택하세요'
+                      : 'Select Title column'}
+                  </option>
                   {propList
                     .filter(p => p.type === 'title')
                     .map(p => (
@@ -629,7 +695,7 @@ export function UrlGenerator() {
                 htmlFor="author-prop-select"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                Author / Writer Column
+                {t.colAuthor}
               </label>
               {propList.length > 0 ? (
                 <select
@@ -638,7 +704,7 @@ export function UrlGenerator() {
                   onChange={e => setAuthorProp(e.target.value)}
                   className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                 >
-                  <option value="">(None / Don't save)</option>
+                  <option value="">{t.noneOption}</option>
                   {propList
                     .filter(
                       p => p.type === 'rich_text' || p.type === 'multi_select'
@@ -653,7 +719,7 @@ export function UrlGenerator() {
                 <Input
                   id="author-prop-select"
                   type="text"
-                  placeholder="e.g. 지은이, 저자, Author"
+                  placeholder="e.g. 저자, 지은이, Author"
                   value={authorProp}
                   onChange={e => setAuthorProp(e.target.value)}
                 />
@@ -666,7 +732,7 @@ export function UrlGenerator() {
                 htmlFor="pub-prop-select"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                Publisher Column
+                {t.colPublisher}
               </label>
               {propList.length > 0 ? (
                 <select
@@ -675,7 +741,7 @@ export function UrlGenerator() {
                   onChange={e => setPublisherProp(e.target.value)}
                   className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                 >
-                  <option value="">(None / Don't save)</option>
+                  <option value="">{t.noneOption}</option>
                   {propList
                     .filter(p => p.type === 'rich_text' || p.type === 'select')
                     .map(p => (
@@ -701,7 +767,7 @@ export function UrlGenerator() {
                 htmlFor="date-prop-select"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                Publish Date Column
+                {t.colDate}
               </label>
               {propList.length > 0 ? (
                 <select
@@ -710,7 +776,7 @@ export function UrlGenerator() {
                   onChange={e => setDateProp(e.target.value)}
                   className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                 >
-                  <option value="">(None / Don't save)</option>
+                  <option value="">{t.noneOption}</option>
                   {propList
                     .filter(p => p.type === 'date' || p.type === 'rich_text')
                     .map(p => (
@@ -734,12 +800,9 @@ export function UrlGenerator() {
             <div className="space-y-1">
               <label
                 htmlFor="isbn-prop-select"
-                className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1"
+                className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                ISBN Column{' '}
-                <Badge variant="secondary" className="text-[10px]">
-                  Used for Duplicate Check
-                </Badge>
+                {t.colIsbn}
               </label>
               {propList.length > 0 ? (
                 <select
@@ -748,7 +811,7 @@ export function UrlGenerator() {
                   onChange={e => setIsbnProp(e.target.value)}
                   className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                 >
-                  <option value="">(None / Don't save)</option>
+                  <option value="">{t.noneOption}</option>
                   {propList
                     .filter(p => p.type === 'rich_text' || p.type === 'number')
                     .map(p => (
@@ -768,13 +831,13 @@ export function UrlGenerator() {
               )}
             </div>
 
-            {/* Optional Files & Media Cover */}
+            {/* Files & Media Cover */}
             <div className="space-y-1">
               <label
                 htmlFor="files-prop-select"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                Additional Cover File Column (Files & Media)
+                {t.colFiles}
               </label>
               {propList.length > 0 ? (
                 <select
@@ -783,7 +846,7 @@ export function UrlGenerator() {
                   onChange={e => setFilesProp(e.target.value)}
                   className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
                 >
-                  <option value="">(None / Page Cover only)</option>
+                  <option value="">{t.noneOption}</option>
                   {propList
                     .filter(p => p.type === 'files')
                     .map(p => (
@@ -802,10 +865,88 @@ export function UrlGenerator() {
                 />
               )}
             </div>
+
+            {/* Book Format (eBook / Paper Book) */}
+            <div className="space-y-1">
+              <label
+                htmlFor="format-prop-select"
+                className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                {t.colFormat}
+              </label>
+              {propList.length > 0 ? (
+                <select
+                  id="format-prop-select"
+                  value={formatProp}
+                  onChange={e => setFormatProp(e.target.value)}
+                  className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                >
+                  <option value="">{t.noneOption}</option>
+                  {propList
+                    .filter(p => p.type === 'select' || p.type === 'rich_text')
+                    .map(p => (
+                      <option key={p.id} value={p.name}>
+                        {p.name} ({p.type})
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <Input
+                  id="format-prop-select"
+                  type="text"
+                  placeholder="e.g. 형태, 구분, Format (Optional)"
+                  value={formatProp}
+                  onChange={e => setFormatProp(e.target.value)}
+                />
+              )}
+            </div>
+
+            {/* Template Selection */}
+            <div className="space-y-1">
+              <label
+                htmlFor="template-prop-select"
+                className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                {t.colTemplate}
+              </label>
+              <select
+                id="template-prop-select"
+                value={
+                  templateSelection.type === 'template_id'
+                    ? templateSelection.template_id
+                    : templateSelection.type
+                }
+                onChange={e => {
+                  const val = e.target.value
+                  if (val === 'none') {
+                    setTemplateSelection({ type: 'none' })
+                  } else if (val === 'default') {
+                    setTemplateSelection({ type: 'default' })
+                  } else {
+                    const found = schemaResult?.templates?.find(
+                      t => t.id === val
+                    )
+                    setTemplateSelection({
+                      type: 'template_id',
+                      template_id: val,
+                      name: found?.name
+                    })
+                  }
+                }}
+                className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+              >
+                <option value="none">{t.templateNone}</option>
+                <option value="default">{t.templateDefault}</option>
+                {schemaResult?.templates?.map(tpl => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name} {tpl.isDefault ? '(Default)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            * High-resolution book covers are always automatically assigned to
-            the Notion <strong>Page Cover</strong>.
+            {t.coverNotice}
           </p>
         </CardContent>
       </Card>
@@ -818,12 +959,8 @@ export function UrlGenerator() {
               <Key className="w-5 h-5" />
             </div>
             <div>
-              <CardTitle className="text-lg">
-                Step 3: Book Search API Keys
-              </CardTitle>
-              <CardDescription>
-                Configure Kakao (Daum) and Google Books search keys
-              </CardDescription>
+              <CardTitle className="text-lg">{t.step3Title}</CardTitle>
+              <CardDescription>{t.step3Desc}</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -836,9 +973,9 @@ export function UrlGenerator() {
                 htmlFor="kakao-key-input"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
               >
-                <span>Kakao REST API Key (Domestic Books)</span>
+                <span>{t.kakaoKeyLabel}</span>
                 <Badge variant="kakao" className="text-[10px]">
-                  Recommended
+                  {t.kakaoKeyBadge}
                 </Badge>
               </label>
               <a
@@ -847,7 +984,7 @@ export function UrlGenerator() {
                 rel="noopener noreferrer"
                 className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5"
               >
-                Get Kakao Key <ExternalLink className="w-3 h-3" />
+                {t.getKakaoKeyLink} <ExternalLink className="w-3 h-3" />
               </a>
             </div>
             <div className="flex gap-2">
@@ -867,7 +1004,7 @@ export function UrlGenerator() {
                 {isTestingKakao ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  'Test'
+                  t.testButton
                 )}
               </Button>
             </div>
@@ -891,9 +1028,9 @@ export function UrlGenerator() {
                 htmlFor="google-key-input"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
               >
-                <span>Google Books API Key (International Books)</span>
+                <span>{t.googleKeyLabel}</span>
                 <Badge variant="google" className="text-[10px]">
-                  Global Coverage
+                  {t.googleKeyBadge}
                 </Badge>
               </label>
               <a
@@ -902,14 +1039,14 @@ export function UrlGenerator() {
                 rel="noopener noreferrer"
                 className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-0.5"
               >
-                Get Google Key <ExternalLink className="w-3 h-3" />
+                {t.getGoogleKeyLink} <ExternalLink className="w-3 h-3" />
               </a>
             </div>
             <div className="flex gap-2">
               <Input
                 id="google-key-input"
                 type="password"
-                placeholder="Google Books API Key (Optional but recommended)"
+                placeholder="Google Books API Key"
                 value={googleKey}
                 onChange={e => setGoogleKey(e.target.value)}
               />
@@ -917,12 +1054,12 @@ export function UrlGenerator() {
                 type="button"
                 variant="outline"
                 onClick={testGoogleApi}
-                disabled={isTestingGoogle}
+                disabled={isTestingGoogle || !googleKey.trim()}
               >
                 {isTestingGoogle ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  'Test'
+                  t.testButton
                 )}
               </Button>
             </div>
@@ -944,10 +1081,8 @@ export function UrlGenerator() {
       {/* Step 4: Preferences */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Step 4: Widget Preferences</CardTitle>
-          <CardDescription>
-            Customize the look and behavior of the embedded widget
-          </CardDescription>
+          <CardTitle className="text-lg">{t.step4Title}</CardTitle>
+          <CardDescription>{t.step4Desc}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -956,7 +1091,7 @@ export function UrlGenerator() {
                 htmlFor="theme-select"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                Default Theme
+                {t.defaultThemeLabel}
               </label>
               <select
                 id="theme-select"
@@ -964,9 +1099,9 @@ export function UrlGenerator() {
                 onChange={e => setThemePref(e.target.value as ThemePreference)}
                 className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
               >
-                <option value="auto">Auto (Match System / Browser)</option>
-                <option value="light">Light Mode</option>
-                <option value="dark">Dark Mode</option>
+                <option value="auto">{t.themeAuto}</option>
+                <option value="light">{t.themeLight}</option>
+                <option value="dark">{t.themeDark}</option>
               </select>
             </div>
 
@@ -975,7 +1110,7 @@ export function UrlGenerator() {
                 htmlFor="default-source-select"
                 className="text-xs font-semibold text-slate-700 dark:text-slate-300"
               >
-                Default Search Tab
+                {t.defaultTabLabel}
               </label>
               <select
                 id="default-source-select"
@@ -985,28 +1120,61 @@ export function UrlGenerator() {
                 }
                 className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
               >
-                <option value="all">All (Kakao + Google Combined)</option>
-                <option value="kakao">Kakao Books Only</option>
-                <option value="google">Google Books Only</option>
+                <option value="all">{t.tabAllLabel}</option>
+                <option value="kakao">{t.tabKakaoLabel}</option>
+                <option value="google">{t.tabGoogleLabel}</option>
               </select>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 pt-2">
-            <input
-              type="checkbox"
-              id="remember"
-              checked={rememberLocal}
-              onChange={e => setRememberLocal(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <label
-              htmlFor="remember"
-              className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer"
-            >
-              Remember these settings in this browser (Stored locally in
-              localStorage for future updates)
-            </label>
+          <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="proxy-image"
+                checked={proxyImage}
+                onChange={e => setProxyImage(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <label
+                htmlFor="proxy-image"
+                className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                {t.proxyImageLabel}
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="insert-body-image"
+                checked={insertBodyImage}
+                onChange={e => setInsertBodyImage(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <label
+                htmlFor="insert-body-image"
+                className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                {t.insertBodyImageLabel}
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="remember"
+                checked={rememberLocal}
+                onChange={e => setRememberLocal(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <label
+                htmlFor="remember"
+                className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                {t.rememberSettings}
+              </label>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1019,13 +1187,8 @@ export function UrlGenerator() {
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <CardTitle className="text-lg">
-                Step 5: Your Notion Embed URL
-              </CardTitle>
-              <CardDescription>
-                Copy this URL and embed it directly into your Notion bookshelf
-                page
-              </CardDescription>
+              <CardTitle className="text-lg">{t.step5Title}</CardTitle>
+              <CardDescription>{t.step5Desc}</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -1045,12 +1208,12 @@ export function UrlGenerator() {
                   {hasCopied ? (
                     <>
                       <Check className="w-4 h-4 text-emerald-300" />
-                      Copied!
+                      {t.copiedButton}
                     </>
                   ) : (
                     <>
                       <Copy className="w-4 h-4" />
-                      Copy URL
+                      {t.copyUrlButton}
                     </>
                   )}
                 </Button>
@@ -1059,31 +1222,18 @@ export function UrlGenerator() {
               {/* Instructions on embedding in Notion */}
               <div className="p-4 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-xs space-y-2">
                 <h4 className="font-semibold text-indigo-900 dark:text-indigo-200">
-                  How to embed in your Notion page:
+                  {t.embedInstructionsTitle}
                 </h4>
                 <ol className="list-decimal list-inside space-y-1 text-slate-700 dark:text-slate-300 leading-relaxed">
-                  <li>
-                    In your Notion page, type{' '}
-                    <code className="bg-white dark:bg-slate-800 px-1 py-0.5 rounded font-mono">
-                      /embed
-                    </code>{' '}
-                    and press Enter
-                  </li>
-                  <li>
-                    Paste the copied URL into the embed link field and click{' '}
-                    <strong>Embed link</strong>
-                  </li>
-                  <li>
-                    Adjust the widget width or height freely. The search widget
-                    adapts to any layout!
-                  </li>
+                  <li>{t.embedStep1}</li>
+                  <li>{t.embedStep2}</li>
+                  <li>{t.embedStep3}</li>
                 </ol>
               </div>
             </div>
           ) : (
             <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
-              Please enter your Notion Integration Secret, Data Source ID (or
-              Database ID), and Title column above to generate your embed link.
+              {t.incompleteConfigNotice}
             </div>
           )}
         </CardContent>
@@ -1096,13 +1246,8 @@ export function UrlGenerator() {
             <div className="flex items-center gap-2">
               <Eye className="w-5 h-5 text-indigo-600" />
               <div>
-                <CardTitle className="text-lg">
-                  Live Interactive Preview
-                </CardTitle>
-                <CardDescription>
-                  Test searching books and duplicate checking right here before
-                  adding to Notion
-                </CardDescription>
+                <CardTitle className="text-lg">{t.step6Title}</CardTitle>
+                <CardDescription>{t.step6Desc}</CardDescription>
               </div>
             </div>
           </CardHeader>

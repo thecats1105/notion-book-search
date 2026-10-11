@@ -1,5 +1,6 @@
 export type ThemePreference = 'auto' | 'light' | 'dark'
 export type SearchSourceFilter = 'all' | 'kakao' | 'google'
+export type Language = 'ko' | 'en'
 
 export interface MappedPropertyItem {
   name: string
@@ -13,6 +14,13 @@ export interface NotionPropertyMapping {
   publishDate?: MappedPropertyItem | string
   isbn?: MappedPropertyItem | string
   coverFilesMedia?: MappedPropertyItem | string
+  format?: MappedPropertyItem | string
+}
+
+export interface TemplateSelection {
+  type: 'none' | 'default' | 'template_id'
+  template_id?: string
+  name?: string
 }
 
 export interface AppConfig {
@@ -22,6 +30,10 @@ export interface AppConfig {
   notionDataSourceId?: string
   notionDatabaseId?: string
   properties: NotionPropertyMapping
+  template?: TemplateSelection
   theme?: ThemePreference
   defaultSource?: SearchSourceFilter
+  lang?: Language
+  proxyImage?: boolean
+  insertBodyImage?: boolean
 }

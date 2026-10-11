@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro'
 import { saveBookToNotion } from '@/lib/notion'
 import type { BookItem } from '@/types/book'
-import type { NotionPropertyMapping } from '@/types/config'
+import type { NotionPropertyMapping, TemplateSelection } from '@/types/config'
 
 export const prerender = false
 
@@ -13,6 +13,10 @@ export const POST: APIRoute = async ({ request }) => {
       databaseId?: string
       propertyMapping?: NotionPropertyMapping
       book?: BookItem
+      template?: TemplateSelection
+      origin?: string
+      proxyImage?: boolean
+      insertBodyImage?: boolean
     }
 
     const token = body.notionToken?.trim()
@@ -31,12 +35,21 @@ export const POST: APIRoute = async ({ request }) => {
       )
     }
 
+    const reqOrigin = body.origin || new URL(request.url).origin
+
     const result = await saveBookToNotion(
       token,
       targetId,
       propertyMapping,
-      book
+      book,
+      {
+        template: body.template,
+        origin: reqOrigin,
+        proxyImage: body.proxyImage,
+        insertBodyImage: body.insertBodyImage
+      }
     )
+
     return new Response(JSON.stringify(result), {
       status: result.success ? 200 : 400,
       headers: { 'Content-Type': 'application/json' }

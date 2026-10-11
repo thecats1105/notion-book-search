@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test'
-import { extractHighResKakaoThumbnail, extractIsbn13 } from '@/lib/kakao'
+import {
+  detectKakaoBookFormat,
+  extractHighResKakaoThumbnail,
+  extractIsbn13
+} from '@/lib/kakao'
 
 describe('kakao helpers', () => {
   it('should extract and decode high-res thumbnail from fname parameter', () => {
@@ -27,5 +31,25 @@ describe('kakao helpers', () => {
     expect(extractIsbn13('9788901047126')).toBe('9788901047126')
     expect(extractIsbn13('8901047123')).toBe('8901047123')
     expect(extractIsbn13('')).toBe('')
+  })
+
+  it('should detect ebook and paper book formats correctly', () => {
+    // Normal paper book with standard 5-digit code
+    expect(
+      detectKakaoBookFormat('8901047123 9788901047126 03810', '클린 코드')
+    ).toBe('paper')
+
+    // eBook with 5-digit code where 2nd digit is 5
+    expect(detectKakaoBookFormat('9788901047126 05810', '클린 코드')).toBe(
+      'ebook'
+    )
+
+    // eBook with title tag
+    expect(
+      detectKakaoBookFormat('9791175880023', '[eBook] 게임 개발자 TS미소녀 1권')
+    ).toBe('ebook')
+
+    // eBook with EB token
+    expect(detectKakaoBookFormat('9788901047126 EB01', '어떤 책')).toBe('ebook')
   })
 })

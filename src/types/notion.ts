@@ -28,12 +28,19 @@ export interface NotionDataSourceItem {
   name: string
 }
 
+export interface NotionTemplateSummary {
+  id: string
+  name: string
+  isDefault: boolean
+}
+
 export interface NotionSchemaResult {
   success: boolean
   dataSourceId?: string
   databaseTitle: string
   properties: Record<string, NotionPropertySummary>
   availableDataSources?: NotionDataSourceItem[]
+  templates?: NotionTemplateSummary[]
   error?: string
 }
 
