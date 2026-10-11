@@ -39,6 +39,9 @@ import type { NotionSchemaResult } from '@/types/notion'
 
 const STORAGE_KEY = 'notion_book_search_generator_config_v1'
 
+const EBOOK_PRESETS = ['전자책', 'eBook', 'E-Book', '전자도서', '웹소설']
+const PAPER_PRESETS = ['종이책', '단행본', 'Paper', '실물책']
+
 export function UrlGenerator() {
   const [lang, setLang] = React.useState<Language>('ko')
   const t = translations[lang]
@@ -925,75 +928,161 @@ export function UrlGenerator() {
             </div>
 
             {/* Book Format Options Mapping if selected */}
-            {formatProp && (
-              <div className="sm:col-span-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label
-                    htmlFor="ebook-val-input"
-                    className="text-xs font-semibold text-slate-700 dark:text-slate-300"
-                  >
-                    {t.colFormatEbookValue}
-                  </label>
-                  {schemaResult?.properties[formatProp]?.options &&
-                  schemaResult.properties[formatProp].options?.length > 0 ? (
-                    <select
-                      id="ebook-val-input"
-                      value={ebookOptionVal}
-                      onChange={e => setEbookOptionVal(e.target.value)}
-                      className="w-full h-9 px-2.5 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
-                    >
-                      {schemaResult.properties[formatProp].options?.map(opt => (
-                        <option key={opt.id} value={opt.name}>
-                          {opt.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <Input
-                      id="ebook-val-input"
-                      type="text"
-                      placeholder={t.customValuePlaceholder}
-                      value={ebookOptionVal}
-                      onChange={e => setEbookOptionVal(e.target.value)}
-                      className="h-9 text-xs"
-                    />
-                  )}
-                </div>
+            {formatProp &&
+              (() => {
+                const dbOpts = (
+                  schemaResult?.properties[formatProp]?.options || []
+                ).map(o => o.name)
+                const combinedEbookOpts = Array.from(
+                  new Set([...dbOpts, ...EBOOK_PRESETS])
+                )
+                const isCustomEbook =
+                  !combinedEbookOpts.includes(ebookOptionVal)
 
-                <div className="space-y-1">
-                  <label
-                    htmlFor="paper-val-input"
-                    className="text-xs font-semibold text-slate-700 dark:text-slate-300"
-                  >
-                    {t.colFormatPaperValue}
-                  </label>
-                  {schemaResult?.properties[formatProp]?.options &&
-                  schemaResult.properties[formatProp].options?.length > 0 ? (
-                    <select
-                      id="paper-val-input"
-                      value={paperOptionVal}
-                      onChange={e => setPaperOptionVal(e.target.value)}
-                      className="w-full h-9 px-2.5 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
-                    >
-                      {schemaResult.properties[formatProp].options?.map(opt => (
-                        <option key={opt.id} value={opt.name}>
-                          {opt.name}
+                const combinedPaperOpts = Array.from(
+                  new Set([...dbOpts, ...PAPER_PRESETS])
+                )
+                const isCustomPaper =
+                  !combinedPaperOpts.includes(paperOptionVal)
+
+                return (
+                  <div className="sm:col-span-2 p-3.5 rounded-xl bg-indigo-50/50 dark:bg-slate-800/60 border border-indigo-100 dark:border-slate-700 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* eBook option mapping */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="ebook-val-select"
+                        className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between"
+                      >
+                        <span>{t.colFormatEbookValue}</span>
+                        <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                          Dropdown
+                        </span>
+                      </label>
+                      <select
+                        id="ebook-val-select"
+                        value={isCustomEbook ? '__custom__' : ebookOptionVal}
+                        onChange={e => {
+                          const val = e.target.value
+                          if (val === '__custom__') {
+                            // keep current or default
+                          } else {
+                            setEbookOptionVal(val)
+                          }
+                        }}
+                        className="w-full h-9 px-2.5 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+                      >
+                        {dbOpts.length > 0 && (
+                          <optgroup
+                            label={
+                              lang === 'ko'
+                                ? '노션 DB 선택지'
+                                : 'Notion Database Options'
+                            }
+                          >
+                            {dbOpts.map(name => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup
+                          label={lang === 'ko' ? '추천 프리셋' : 'Presets'}
+                        >
+                          {EBOOK_PRESETS.filter(p => !dbOpts.includes(p)).map(
+                            name => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            )
+                          )}
+                        </optgroup>
+                        <option value="__custom__">
+                          {lang === 'ko' ? '직접 입력...' : 'Custom value...'}
                         </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <Input
-                      id="paper-val-input"
-                      type="text"
-                      placeholder={t.customValuePlaceholder}
-                      value={paperOptionVal}
-                      onChange={e => setPaperOptionVal(e.target.value)}
-                      className="h-9 text-xs"
-                    />
-                  )}
-                </div>
-              </div>
-            )}
+                      </select>
+
+                      {isCustomEbook && (
+                        <Input
+                          id="ebook-val-custom-input"
+                          type="text"
+                          placeholder={t.customValuePlaceholder}
+                          value={ebookOptionVal}
+                          onChange={e => setEbookOptionVal(e.target.value)}
+                          className="h-8 text-xs mt-1"
+                        />
+                      )}
+                    </div>
+
+                    {/* Paper option mapping */}
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="paper-val-select"
+                        className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between"
+                      >
+                        <span>{t.colFormatPaperValue}</span>
+                        <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                          Dropdown
+                        </span>
+                      </label>
+                      <select
+                        id="paper-val-select"
+                        value={isCustomPaper ? '__custom__' : paperOptionVal}
+                        onChange={e => {
+                          const val = e.target.value
+                          if (val === '__custom__') {
+                            // keep current or default
+                          } else {
+                            setPaperOptionVal(val)
+                          }
+                        }}
+                        className="w-full h-9 px-2.5 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
+                      >
+                        {dbOpts.length > 0 && (
+                          <optgroup
+                            label={
+                              lang === 'ko'
+                                ? '노션 DB 선택지'
+                                : 'Notion Database Options'
+                            }
+                          >
+                            {dbOpts.map(name => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup
+                          label={lang === 'ko' ? '추천 프리셋' : 'Presets'}
+                        >
+                          {PAPER_PRESETS.filter(p => !dbOpts.includes(p)).map(
+                            name => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            )
+                          )}
+                        </optgroup>
+                        <option value="__custom__">
+                          {lang === 'ko' ? '직접 입력...' : 'Custom value...'}
+                        </option>
+                      </select>
+
+                      {isCustomPaper && (
+                        <Input
+                          id="paper-val-custom-input"
+                          type="text"
+                          placeholder={t.customValuePlaceholder}
+                          value={paperOptionVal}
+                          onChange={e => setPaperOptionVal(e.target.value)}
+                          className="h-8 text-xs mt-1"
+                        />
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
 
             {/* Template Selection */}
             <div className="space-y-1">
