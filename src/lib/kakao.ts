@@ -31,14 +31,17 @@ export function extractIsbn13(isbnStr: string | undefined | null): string {
   return parts[0] || ''
 }
 
-export function detectKakaoBookFormat(
-  rawIsbn: string | undefined | null,
-  title: string | undefined | null,
-  contents?: string | null
-): BookFormat {
-  const fullText = `${title || ''} ${contents || ''}`.toLowerCase()
+export function detectKakaoBookFormat(doc: {
+  isbn: string
+  title?: string
+  contents?: string
+  sale_price?: number
+  price?: number
+}): BookFormat {
+  const rawIsbn = doc.isbn || ''
+  const fullText = `${doc.title || ''} ${doc.contents || ''}`.toLowerCase()
 
-  // 1. Check title/contents for explicit eBook markers
+  // 1. Explicit text markers in Title or Contents
   if (
     /\[ebook\]|\(ebook\)|\[전자책\]|\(전자책\)|\bebook\b|\[e-book\]|\(e-book\)|\be북\b/i.test(
       fullText
@@ -47,25 +50,40 @@ export function detectKakaoBookFormat(
     return 'ebook'
   }
 
-  // 2. Inspect ISBN string tokens
-  if (rawIsbn) {
-    const tokens = rawIsbn.trim().split(/\s+/)
-    for (const token of tokens) {
-      const clean = token.replace(/[^0-9a-zA-Z]/g, '')
-
-      // 5-digit Korean supplementary code (부가기호)
-      // Digit 2 denotes publication format: '5' represents Electronic Publication (eBook)
-      if (clean.length === 5 && /^\d{5}$/.test(clean)) {
-        if (clean[1] === '5') {
-          return 'ebook'
-        }
-      }
-
-      // Explicit EB or ebook tokens in ISBN
-      if (/^eb/i.test(clean) || /ebook/i.test(clean)) {
+  // 2. Korean ISBN supplementary code (부가기호, 5 digits)
+  // Second digit '5' indicates Electronic Publication / eBook
+  const tokens = rawIsbn.trim().split(/\s+/)
+  for (const token of tokens) {
+    const clean = token.replace(/[^0-9a-zA-Z]/g, '')
+    if (clean.length === 5 && /^\d{5}$/.test(clean)) {
+      if (clean[1] === '5') {
         return 'ebook'
       }
     }
+    if (/^eb/i.test(clean) || /ebook/i.test(clean)) {
+      return 'ebook'
+    }
+  }
+
+  // 3. Kakao Daum specific signature:
+  // When a 10-digit ISBN does not exist (as is standard for Korean digital/eBook publications),
+  // Kakao formats the ISBN with a leading space (" 979...").
+  if (
+    rawIsbn.startsWith(' ') &&
+    tokens.length === 1 &&
+    tokens[0].length === 13
+  ) {
+    return 'ebook'
+  }
+
+  // 4. In Kakao, eBook entries have sale_price === -1 (no discount price) without a 10-digit ISBN
+  if (
+    tokens.length === 1 &&
+    doc.sale_price === -1 &&
+    doc.price !== undefined &&
+    doc.price >= 0
+  ) {
+    return 'ebook'
   }
 
   return 'paper'
@@ -106,7 +124,7 @@ export async function searchKakaoBooks(
     const data = (await response.json()) as KakaoSearchResponse
     const items: BookItem[] = (data.documents || []).map((doc, idx) => {
       const isbn = extractIsbn13(doc.isbn)
-      const format = detectKakaoBookFormat(doc.isbn, doc.title, doc.contents)
+      const format = detectKakaoBookFormat(doc)
       const thumbnail = extractHighResKakaoThumbnail(doc.thumbnail)
       const publishedDate = doc.datetime ? doc.datetime.slice(0, 10) : ''
 
