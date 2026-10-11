@@ -81,7 +81,6 @@ export function UrlGenerator() {
   const [themePref, setThemePref] = React.useState<ThemePreference>('auto')
   const [defaultSource, setDefaultSource] =
     React.useState<SearchSourceFilter>('all')
-  const [proxyImage, setProxyImage] = React.useState(true)
   const [insertBodyImage, setInsertBodyImage] = React.useState(true)
   const [rememberLocal, setRememberLocal] = React.useState(true)
 
@@ -112,9 +111,7 @@ export function UrlGenerator() {
           if (parsed.googleKey) setGoogleKey(parsed.googleKey)
           if (parsed.themePref) setThemePref(parsed.themePref)
           if (parsed.defaultSource) setDefaultSource(parsed.defaultSource)
-          if (typeof parsed.proxyImage === 'boolean') {
-            setProxyImage(parsed.proxyImage)
-          }
+
           if (typeof parsed.insertBodyImage === 'boolean') {
             setInsertBodyImage(parsed.insertBodyImage)
           }
@@ -374,7 +371,6 @@ export function UrlGenerator() {
       theme: themePref,
       defaultSource,
       lang,
-      proxyImage,
       insertBodyImage
     }
 
@@ -398,7 +394,6 @@ export function UrlGenerator() {
             googleKey: googleKey.trim(),
             themePref,
             defaultSource,
-            proxyImage,
             insertBodyImage,
             template: templateSelection,
             properties
@@ -424,7 +419,6 @@ export function UrlGenerator() {
     googleKey,
     themePref,
     defaultSource,
-    proxyImage,
     insertBodyImage,
     rememberLocal,
     origin,
@@ -1128,22 +1122,6 @@ export function UrlGenerator() {
           </div>
 
           <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="proxy-image"
-                checked={proxyImage}
-                onChange={e => setProxyImage(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <label
-                htmlFor="proxy-image"
-                className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer"
-              >
-                {t.proxyImageLabel}
-              </label>
-            </div>
-
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"

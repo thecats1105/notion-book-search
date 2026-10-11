@@ -229,7 +229,6 @@ export function EmbedWidget({
           book: selectedBook,
           template: selectedTemplate,
           origin,
-          proxyImage: config.proxyImage !== false,
           insertBodyImage: config.insertBodyImage !== false
         })
       })

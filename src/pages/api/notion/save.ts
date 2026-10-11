@@ -15,7 +15,6 @@ export const POST: APIRoute = async ({ request }) => {
       book?: BookItem
       template?: TemplateSelection
       origin?: string
-      proxyImage?: boolean
       insertBodyImage?: boolean
     }
 
@@ -35,8 +34,6 @@ export const POST: APIRoute = async ({ request }) => {
       )
     }
 
-    const reqOrigin = body.origin || new URL(request.url).origin
-
     const result = await saveBookToNotion(
       token,
       targetId,
@@ -44,8 +41,7 @@ export const POST: APIRoute = async ({ request }) => {
       book,
       {
         template: body.template,
-        origin: reqOrigin,
-        proxyImage: body.proxyImage,
+        origin: body.origin || new URL(request.url).origin,
         insertBodyImage: body.insertBodyImage
       }
     )

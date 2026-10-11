@@ -28,6 +28,63 @@ export function cleanNotionId(rawId: string): string {
   return trimmed
 }
 
+export async function uploadImageToNotion(
+  token: string,
+  imageUrl: string,
+  filename = 'cover.jpg'
+): Promise<string | null> {
+  if (!token || !imageUrl) return null
+  try {
+    const imgRes = await fetch(imageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; NotionBookSearch/1.0)'
+      }
+    })
+    if (!imgRes.ok) return null
+
+    const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
+    const imgBuf = await imgRes.arrayBuffer()
+
+    // 1. Initialize file upload
+    const initRes = await fetch('https://api.notion.com/v1/file_uploads', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token.trim()}`,
+        'Notion-Version': NOTION_TEMPLATE_VERSION,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        filename,
+        content_type: contentType
+      })
+    })
+
+    if (!initRes.ok) return null
+    const initData = (await initRes.json()) as {
+      id: string
+      upload_url: string
+    }
+
+    // 2. Upload file bytes via multipart form data
+    const form = new FormData()
+    form.append('file', new Blob([imgBuf], { type: contentType }), filename)
+
+    const sendRes = await fetch(initData.upload_url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token.trim()}`,
+        'Notion-Version': NOTION_TEMPLATE_VERSION
+      },
+      body: form
+    })
+
+    if (!sendRes.ok) return null
+    return initData.id
+  } catch {
+    return null
+  }
+}
+
 interface RawNotionPropertyItem {
   id: string
   name: string
@@ -429,13 +486,16 @@ export async function saveBookToNotion(
     }
   }
 
-  // Determine cover URL:
-  // Using the Cloudflare Pages proxy (/api/cover.jpg?url=...) ensures Notion recognizes the URL as an image
-  // file with .jpg extension, rendering true image previews in Gallery/Files properties instead of document icons!
-  let coverUrl = book.thumbnail
-  if (options?.proxyImage !== false && options?.origin && book.thumbnail) {
-    const cleanOrigin = options.origin.replace(/\/+$/, '')
-    coverUrl = `${cleanOrigin}/api/cover.jpg?url=${encodeURIComponent(book.thumbnail)}`
+  // Upload book cover directly to Notion via official File Upload API (2026-03-11)
+  // This guarantees that Notion stores the file in internal storage and displays real thumbnails
+  // in Table Views, Gallery Views, and Files & Media properties!
+  let uploadedFileId: string | null = null
+  if (book.thumbnail) {
+    uploadedFileId = await uploadImageToNotion(
+      token,
+      book.thumbnail,
+      `cover-${book.isbn || 'book'}.jpg`
+    )
   }
 
   const propertiesPayload: Record<string, unknown> = {
@@ -567,19 +627,31 @@ export async function saveBookToNotion(
   }
 
   // Handle Cover in Files property
-  if (propertyMapping.coverFilesMedia && coverUrl) {
+  if (propertyMapping.coverFilesMedia) {
     const filesName =
       typeof propertyMapping.coverFilesMedia === 'string'
         ? propertyMapping.coverFilesMedia
         : propertyMapping.coverFilesMedia.name
-    propertiesPayload[filesName] = {
-      files: [
-        {
-          name: `cover-${book.isbn || 'book'}.jpg`,
-          type: 'external',
-          external: { url: coverUrl }
-        }
-      ]
+
+    if (uploadedFileId) {
+      propertiesPayload[filesName] = {
+        files: [
+          {
+            type: 'file_upload',
+            file_upload: { id: uploadedFileId }
+          }
+        ]
+      }
+    } else if (book.thumbnail) {
+      propertiesPayload[filesName] = {
+        files: [
+          {
+            name: `cover-${book.isbn || 'book'}.jpg`,
+            type: 'external',
+            external: { url: book.thumbnail }
+          }
+        ]
+      }
     }
   }
 
@@ -587,10 +659,16 @@ export async function saveBookToNotion(
     properties: propertiesPayload
   }
 
-  if (coverUrl) {
+  // Handle Page Cover
+  if (uploadedFileId) {
+    payload.cover = {
+      type: 'file_upload',
+      file_upload: { id: uploadedFileId }
+    }
+  } else if (book.thumbnail) {
     payload.cover = {
       type: 'external',
-      external: { url: coverUrl }
+      external: { url: book.thumbnail }
     }
   }
 
@@ -611,16 +689,18 @@ export async function saveBookToNotion(
       }
     }
     // Notion API rule: When applying a template, children parameter must NOT be included!
-  } else if (options?.insertBodyImage !== false && coverUrl) {
+  } else if (
+    options?.insertBodyImage !== false &&
+    (uploadedFileId || book.thumbnail)
+  ) {
     // Insert cover image into page body so views with 'Page content' card preview display it
     payload.children = [
       {
         object: 'block',
         type: 'image',
-        image: {
-          type: 'external',
-          external: { url: coverUrl }
-        }
+        image: uploadedFileId
+          ? { type: 'file_upload', file_upload: { id: uploadedFileId } }
+          : { type: 'external', external: { url: book.thumbnail } }
       }
     ]
   }
@@ -636,7 +716,7 @@ export async function saveBookToNotion(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token.trim()}`,
-        'Notion-Version': NOTION_DATA_SOURCE_VERSION,
+        'Notion-Version': NOTION_TEMPLATE_VERSION,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(dsPayload)
@@ -652,7 +732,6 @@ export async function saveBookToNotion(
 
   // 2. Fallback attempt: create page with parent: { database_id: cleanId } (2022-06-28)
   try {
-    // Legacy API does not support template parameter
     const legacyPayload = { ...payload }
     delete legacyPayload.template
 
