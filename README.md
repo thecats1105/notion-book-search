@@ -103,6 +103,7 @@ Open [http://localhost:4321](http://localhost:4321) in your browser.
 - `bun run dev`: Start the local Astro development server.
 - `bun run build`: Build the production server bundle for Cloudflare Pages.
 - `bun run preview`: Preview the production build locally.
+- `bun run deploy`: Build and deploy to Cloudflare Pages via Wrangler.
 - `bun test`: Run automated unit tests.
 - `bun run check`: Run Biome lint and formatting checks.
 - `bun run format`: Auto-format source code with Biome.
