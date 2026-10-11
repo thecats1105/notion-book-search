@@ -63,6 +63,8 @@ export function UrlGenerator() {
   const [formatProp, setFormatProp] = React.useState('')
   const [ebookOptionVal, setEbookOptionVal] = React.useState('전자책')
   const [paperOptionVal, setPaperOptionVal] = React.useState('종이책')
+  const [statusProp, setStatusProp] = React.useState('')
+  const [statusDefaultVal, setStatusDefaultVal] = React.useState('')
   const [templateSelection, setTemplateSelection] =
     React.useState<TemplateSelection>({ type: 'default' })
 
@@ -386,6 +388,13 @@ export function UrlGenerator() {
             ebookValue: ebookOptionVal.trim() || '전자책',
             paperValue: paperOptionVal.trim() || '종이책'
           }
+        : undefined,
+      status: statusProp
+        ? {
+            name: statusProp,
+            type: getPropertyConfig(statusProp)?.type || 'select',
+            defaultValue: statusDefaultVal.trim() || undefined
+          }
         : undefined
     }
 
@@ -446,6 +455,8 @@ export function UrlGenerator() {
     formatProp,
     ebookOptionVal,
     paperOptionVal,
+    statusProp,
+    statusDefaultVal,
     templateSelection,
     kakaoKey,
     googleKey,
@@ -1083,6 +1094,88 @@ export function UrlGenerator() {
                   </div>
                 )
               })()}
+
+            {/* Status (상태) Column Mapping */}
+            <div className="space-y-1">
+              <label
+                htmlFor="status-prop-select"
+                className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+              >
+                {t.colStatus}
+              </label>
+              {propList.length > 0 ? (
+                <select
+                  id="status-prop-select"
+                  value={statusProp}
+                  onChange={e => {
+                    const nextProp = e.target.value
+                    setStatusProp(nextProp)
+                    const match = schemaResult?.properties[nextProp]
+                    if (match?.options && match.options.length > 0) {
+                      const owned = match.options.find(o =>
+                        /소장|보유|owned/i.test(o.name)
+                      )
+                      setStatusDefaultVal(
+                        owned ? owned.name : match.options[0].name
+                      )
+                    }
+                  }}
+                  className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                >
+                  <option value="">{t.noneOption}</option>
+                  {propList
+                    .filter(p => p.type === 'select' || p.type === 'status')
+                    .map(p => (
+                      <option key={p.id} value={p.name}>
+                        {p.name} ({p.type})
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <Input
+                  id="status-prop-select"
+                  type="text"
+                  placeholder="e.g. 상태, Status (Optional)"
+                  value={statusProp}
+                  onChange={e => setStatusProp(e.target.value)}
+                />
+              )}
+            </div>
+
+            {/* Default Status Value Selector if statusProp selected */}
+            {statusProp && (
+              <div className="space-y-1">
+                <label
+                  htmlFor="status-default-val-select"
+                  className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+                >
+                  {t.colStatusDefaultValue}
+                </label>
+                {schemaResult?.properties[statusProp]?.options &&
+                schemaResult.properties[statusProp].options?.length > 0 ? (
+                  <select
+                    id="status-default-val-select"
+                    value={statusDefaultVal}
+                    onChange={e => setStatusDefaultVal(e.target.value)}
+                    className="w-full h-10 px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-semibold"
+                  >
+                    {schemaResult.properties[statusProp].options?.map(opt => (
+                      <option key={opt.id} value={opt.name}>
+                        {opt.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="status-default-val-select"
+                    type="text"
+                    placeholder="e.g. 소장, 위시리스트"
+                    value={statusDefaultVal}
+                    onChange={e => setStatusDefaultVal(e.target.value)}
+                  />
+                )}
+              </div>
+            )}
 
             {/* Template Selection */}
             <div className="space-y-1">

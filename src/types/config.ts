@@ -14,6 +14,12 @@ export interface FormatMappingConfig {
   paperValue?: string
 }
 
+export interface StatusMappingConfig {
+  name: string
+  type: string
+  defaultValue?: string
+}
+
 export interface NotionPropertyMapping {
   title: string
   author?: MappedPropertyItem | string
@@ -22,6 +28,7 @@ export interface NotionPropertyMapping {
   isbn?: MappedPropertyItem | string
   coverFilesMedia?: MappedPropertyItem | string
   format?: FormatMappingConfig | MappedPropertyItem | string
+  status?: StatusMappingConfig | MappedPropertyItem | string
 }
 
 export interface TemplateSelection {

@@ -195,10 +195,21 @@ export async function fetchNotionDatabaseSchema(
       for (const [propName, propVal] of Object.entries(
         dsData.properties || {}
       )) {
+        const rawOpts =
+          propVal.select?.options ||
+          propVal.multi_select?.options ||
+          propVal.status?.options
         properties[propName] = {
           id: propVal.id,
           name: propVal.name || propName,
-          type: propVal.type
+          type: propVal.type,
+          options: rawOpts
+            ? rawOpts.map((o: RawNotionSelectOption) => ({
+                id: o.id,
+                name: o.name,
+                color: o.color
+              }))
+            : undefined
         }
       }
 
@@ -256,10 +267,21 @@ export async function fetchNotionDatabaseSchema(
           for (const [propName, propVal] of Object.entries(
             subDsData.properties || {}
           )) {
+            const rawOpts =
+              propVal.select?.options ||
+              propVal.multi_select?.options ||
+              propVal.status?.options
             properties[propName] = {
               id: propVal.id,
               name: propVal.name || propName,
-              type: propVal.type
+              type: propVal.type,
+              options: rawOpts
+                ? rawOpts.map((o: RawNotionSelectOption) => ({
+                    id: o.id,
+                    name: o.name,
+                    color: o.color
+                  }))
+                : undefined
             }
           }
 
@@ -633,6 +655,25 @@ export async function saveBookToNotion(
     } else {
       propertiesPayload[formatName] = {
         rich_text: [{ text: { content: formatLabel } }]
+      }
+    }
+  }
+
+  // Handle Status (상태)
+  if (propertyMapping.status) {
+    const isObj = typeof propertyMapping.status === 'object'
+    const statusConfig = isObj
+      ? propertyMapping.status
+      : { name: propertyMapping.status, type: 'select' }
+    const statusVal =
+      'defaultValue' in statusConfig && statusConfig.defaultValue
+        ? statusConfig.defaultValue
+        : undefined
+    if (statusVal) {
+      if (statusConfig.type === 'status') {
+        propertiesPayload[statusConfig.name] = { status: { name: statusVal } }
+      } else {
+        propertiesPayload[statusConfig.name] = { select: { name: statusVal } }
       }
     }
   }
