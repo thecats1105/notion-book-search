@@ -47,6 +47,31 @@ export async function searchBooks({
     return searchGoogleBooks(cleanQuery, cleanGoogleKey, cleanPage, 16)
   }
 
+  // Fast path for 'all' mode:
+  // When only Kakao key is configured (the most common setup), query Kakao directly.
+  // This responds in ~50ms without waiting for Google Books rate limits.
+  if (cleanKakaoKey && !cleanGoogleKey) {
+    const kakaoRes = await searchKakaoBooks(
+      cleanQuery,
+      cleanKakaoKey,
+      cleanPage,
+      16
+    )
+    if (kakaoRes.items.length > 0) {
+      return kakaoRes
+    }
+    const googleRes = await searchGoogleBooks(
+      cleanQuery,
+      undefined,
+      cleanPage,
+      16
+    )
+    if (googleRes.items.length > 0) {
+      return googleRes
+    }
+    return kakaoRes
+  }
+
   // Default 'all': query both in parallel
   const promises: [
     Promise<{ items: BookItem[]; totalCount: number; error?: string }>,

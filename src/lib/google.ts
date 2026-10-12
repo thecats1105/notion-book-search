@@ -28,10 +28,15 @@ export async function searchGoogleBooks(
     endpoint.searchParams.set('key', apiKey.trim())
   }
 
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 2500)
+
   try {
     const response = await fetch(endpoint.toString(), {
-      method: 'GET'
+      method: 'GET',
+      signal: controller.signal
     })
+    clearTimeout(timer)
 
     if (!response.ok) {
       const errorText = await response.text()

@@ -13,6 +13,8 @@ const NOTION_DATA_SOURCE_VERSION = '2025-09-03'
 const NOTION_TEMPLATE_VERSION = '2026-03-11'
 const NOTION_LEGACY_VERSION = '2022-06-28'
 
+const notionTargetTypeCache = new Map<string, 'data_source' | 'database'>()
+
 export function cleanNotionId(rawId: string): string {
   if (!rawId) return ''
   const trimmed = rawId.trim()
@@ -31,15 +33,43 @@ export function cleanNotionId(rawId: string): string {
 export async function uploadImageToNotion(
   token: string,
   imageUrl: string,
-  filename = 'cover.jpg'
+  filename = 'cover.jpg',
+  origin = ''
 ): Promise<string | null> {
   if (!token || !imageUrl) return null
   try {
-    const imgRes = await fetch(imageUrl)
-    if (!imgRes.ok) return null
+    let imgBuf: ArrayBuffer | null = null
+    let contentType = 'image/jpeg'
 
-    const contentType = imgRes.headers.get('content-type') || 'image/jpeg'
-    const imgBuf = await imgRes.arrayBuffer()
+    // 1. In browser environments, fetch via Cloudflare Pages /api/cover.jpg proxy to bypass CORS
+    if (origin) {
+      try {
+        const cleanOrigin = origin.replace(/\/+$/, '')
+        const proxyUrl = `${cleanOrigin}/api/cover.jpg?url=${encodeURIComponent(imageUrl)}`
+        const proxyRes = await fetch(proxyUrl)
+        if (proxyRes.ok) {
+          contentType = proxyRes.headers.get('content-type') || 'image/jpeg'
+          imgBuf = await proxyRes.arrayBuffer()
+        }
+      } catch {
+        // Fallback to direct fetch
+      }
+    }
+
+    // 2. Direct fetch fallback
+    if (!imgBuf) {
+      try {
+        const directRes = await fetch(imageUrl)
+        if (directRes.ok) {
+          contentType = directRes.headers.get('content-type') || 'image/jpeg'
+          imgBuf = await directRes.arrayBuffer()
+        }
+      } catch {
+        // Direct fetch failed
+      }
+    }
+
+    if (!imgBuf) return null
 
     // 1. Initialize file upload
     const initRes = await fetch('https://api.notion.com/v1/file_uploads', {
@@ -181,6 +211,7 @@ export async function fetchNotionDatabaseSchema(
     )
 
     if (dsRes.ok) {
+      notionTargetTypeCache.set(cleanId, 'data_source')
       const dsData = (await dsRes.json()) as RawDataSourceResponse
       const title =
         dsData.name ||
@@ -258,6 +289,8 @@ export async function fetchNotionDatabaseSchema(
         )
 
         if (subDsRes.ok) {
+          notionTargetTypeCache.set(firstDsId, 'data_source')
+          notionTargetTypeCache.set(cleanId, 'database')
           const subDsData = (await subDsRes.json()) as RawDataSourceResponse
           const properties: Record<string, NotionPropertySummary> = {}
           for (const [propName, propVal] of Object.entries(
@@ -312,6 +345,7 @@ export async function fetchNotionDatabaseSchema(
     )
 
     if (legacyRes.ok) {
+      notionTargetTypeCache.set(cleanId, 'database')
       const legacyData = (await legacyRes.json()) as RawDatabaseResponse
       const dbTitle =
         (legacyData.title || []).map(t => t.plain_text || '').join('') ||
@@ -408,38 +442,46 @@ export async function checkNotionBookExists(
     page_size: 1
   })
 
-  // 1. Data source query (2025-09-03)
-  try {
-    const dsRes = await fetch(
-      `https://api.notion.com/v1/data_sources/${cleanId}/query`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token.trim()}`,
-          'Notion-Version': NOTION_DATA_SOURCE_VERSION,
-          'Content-Type': 'application/json'
-        },
-        body: bodyStr
-      }
-    )
+  const cachedType = notionTargetTypeCache.get(cleanId)
 
-    if (dsRes.ok) {
-      const data = (await dsRes.json()) as RawNotionQueryResult
-      if (data.results && data.results.length > 0) {
-        const found = data.results[0]
-        let pageTitle = ''
-        for (const val of Object.values(found.properties || {})) {
-          if (val.title && Array.isArray(val.title)) {
-            pageTitle = val.title.map(t => t.plain_text || '').join('')
-            break
-          }
+  // 1. Data source query (2025-09-03) - skipped if already known as database
+  if (cachedType !== 'database') {
+    try {
+      const dsRes = await fetch(
+        `https://api.notion.com/v1/data_sources/${cleanId}/query`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token.trim()}`,
+            'Notion-Version': NOTION_DATA_SOURCE_VERSION,
+            'Content-Type': 'application/json'
+          },
+          body: bodyStr
         }
-        return { exists: true, pageUrl: found.url, pageTitle }
+      )
+
+      if (dsRes.ok) {
+        notionTargetTypeCache.set(cleanId, 'data_source')
+        const data = (await dsRes.json()) as RawNotionQueryResult
+        if (data.results && data.results.length > 0) {
+          const found = data.results[0]
+          let pageTitle = ''
+          for (const val of Object.values(found.properties || {})) {
+            if (val.title && Array.isArray(val.title)) {
+              pageTitle = val.title.map(t => t.plain_text || '').join('')
+              break
+            }
+          }
+          return { exists: true, pageUrl: found.url, pageTitle }
+        }
+        return { exists: false }
       }
-      return { exists: false }
+      if (dsRes.status === 400 || dsRes.status === 404) {
+        notionTargetTypeCache.set(cleanId, 'database')
+      }
+    } catch {
+      // Continue to fallback
     }
-  } catch {
-    // Continue to fallback
   }
 
   // 2. Legacy database query fallback
@@ -465,6 +507,7 @@ export async function checkNotionBookExists(
       }
     }
 
+    notionTargetTypeCache.set(cleanId, 'database')
     const data = (await dbRes.json()) as RawNotionQueryResult
     if (data.results && data.results.length > 0) {
       const found = data.results[0]
@@ -508,6 +551,10 @@ export async function saveBookToNotion(
     }
   }
 
+  const origin =
+    options?.origin ||
+    (typeof window !== 'undefined' ? window.location.origin : '')
+
   // Upload book cover directly to Notion via official File Upload API (2026-03-11)
   // This guarantees that Notion stores the file in internal storage and displays real thumbnails
   // in Table Views, Gallery Views, and Files & Media properties!
@@ -516,9 +563,16 @@ export async function saveBookToNotion(
     uploadedFileId = await uploadImageToNotion(
       token,
       book.thumbnail,
-      `cover-${book.isbn || 'book'}.jpg`
+      `cover-${book.isbn || 'book'}.jpg`,
+      origin
     )
   }
+
+  // Fallback proxy-assisted cover URL ending in .jpg for external links
+  const fallbackCoverUrl =
+    origin && book.thumbnail
+      ? `${origin.replace(/\/+$/, '')}/api/cover.jpg?url=${encodeURIComponent(book.thumbnail)}`
+      : book.thumbnail
 
   const propertiesPayload: Record<string, unknown> = {
     [propertyMapping.title]: {
@@ -690,13 +744,13 @@ export async function saveBookToNotion(
           }
         ]
       }
-    } else if (book.thumbnail) {
+    } else if (fallbackCoverUrl) {
       propertiesPayload[filesName] = {
         files: [
           {
             name: `cover-${book.isbn || 'book'}.jpg`,
             type: 'external',
-            external: { url: book.thumbnail }
+            external: { url: fallbackCoverUrl }
           }
         ]
       }
@@ -713,10 +767,10 @@ export async function saveBookToNotion(
       type: 'file_upload',
       file_upload: { id: uploadedFileId }
     }
-  } else if (book.thumbnail) {
+  } else if (fallbackCoverUrl) {
     payload.cover = {
       type: 'external',
-      external: { url: book.thumbnail }
+      external: { url: fallbackCoverUrl }
     }
   }
 
@@ -739,7 +793,7 @@ export async function saveBookToNotion(
     // Notion API rule: When applying a template, children parameter must NOT be included!
   } else if (
     options?.insertBodyImage !== false &&
-    (uploadedFileId || book.thumbnail)
+    (uploadedFileId || fallbackCoverUrl)
   ) {
     // Insert cover image into page body so views with 'Page content' card preview display it
     payload.children = [
@@ -748,34 +802,42 @@ export async function saveBookToNotion(
         type: 'image',
         image: uploadedFileId
           ? { type: 'file_upload', file_upload: { id: uploadedFileId } }
-          : { type: 'external', external: { url: book.thumbnail } }
+          : { type: 'external', external: { url: fallbackCoverUrl } }
       }
     ]
   }
 
+  const cachedTargetType = notionTargetTypeCache.get(cleanId)
+
   // 1. First attempt: create page with parent: { data_source_id: cleanId } (2025-09-03)
-  try {
-    const dsPayload = {
-      ...payload,
-      parent: { data_source_id: cleanId }
-    }
+  if (cachedTargetType !== 'database') {
+    try {
+      const dsPayload = {
+        ...payload,
+        parent: { data_source_id: cleanId }
+      }
 
-    const dsRes = await fetch('https://api.notion.com/v1/pages', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token.trim()}`,
-        'Notion-Version': NOTION_TEMPLATE_VERSION,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(dsPayload)
-    })
+      const dsRes = await fetch('https://api.notion.com/v1/pages', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          'Notion-Version': NOTION_TEMPLATE_VERSION,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(dsPayload)
+      })
 
-    if (dsRes.ok) {
-      const data = (await dsRes.json()) as { id: string; url: string }
-      return { success: true, pageId: data.id, pageUrl: data.url }
+      if (dsRes.ok) {
+        notionTargetTypeCache.set(cleanId, 'data_source')
+        const data = (await dsRes.json()) as { id: string; url: string }
+        return { success: true, pageId: data.id, pageUrl: data.url }
+      }
+      if (dsRes.status === 400 || dsRes.status === 404) {
+        notionTargetTypeCache.set(cleanId, 'database')
+      }
+    } catch {
+      // Fallback to database_id
     }
-  } catch {
-    // Fallback to database_id
   }
 
   // 2. Fallback attempt: create page with parent: { database_id: cleanId } (2022-06-28)
@@ -799,6 +861,7 @@ export async function saveBookToNotion(
     })
 
     if (dbRes.ok) {
+      notionTargetTypeCache.set(cleanId, 'database')
       const data = (await dbRes.json()) as { id: string; url: string }
       return { success: true, pageId: data.id, pageUrl: data.url }
     }
