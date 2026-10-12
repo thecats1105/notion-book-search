@@ -55,21 +55,14 @@ Managing a personal reading library in Notion is visually rewarding, but manuall
 |   Notion Page    | --------------------------------> |  Embed Client App  |
 |  (/embed block)  |                                   |  (Reads URL Hash)  |
 +------------------+                                   +--------------------+
-                                                                  |
-                                              Requests via HTTPS  | (Headers/Body)
-                                                                  v
-                                                       +--------------------+
-                                                       |  Cloudflare Pages  |
-                                                       |   API Proxy SSR    |
-                                                       +--------------------+
                                                           |        |       |
                                          +----------------+        |       +----------------+
                                          v                         v                        v
                                   [ Kakao Books ]          [ Google Books ]           [ Notion API ]
 ```
 
-1. **URL Hash Storage**: When creating an embed link, your configuration is encoded into URL-safe Base64 and placed behind `#config=...`. Browsers do not transmit URL hashes in HTTP request lines.
-2. **Stateless Edge Proxy**: Cloudflare Pages Functions act as lightweight stateless proxies (`/api/search`, `/api/notion/schema`, `/api/notion/check`, `/api/notion/save`) to bypass browser CORS restrictions without persisting any user secrets.
+1. **100% Static & Pure Client-Side**: The application is fully static and runs entirely in the user's browser, communicating directly with Kakao Books, Google Books, and Notion APIs. No server runtime or backend functions are required.
+2. **URL Hash Storage**: When creating an embed link, your configuration is encoded into URL-safe Base64 and placed behind `#config=...`. Browsers do not transmit URL hashes in HTTP request lines, ensuring tokens and keys are never sent to any hosting server.
 
 ---
 
@@ -101,9 +94,9 @@ Open [http://localhost:4321](http://localhost:4321) in your browser.
 ### Scripts
 
 - `bun run dev`: Start the local Astro development server.
-- `bun run build`: Build the production server bundle for Cloudflare Pages.
+- `bun run build`: Build the static production bundle for Cloudflare Pages.
 - `bun run preview`: Preview the production build locally.
-- `bun run deploy`: Build and deploy to Cloudflare via Wrangler.
+- `bun run deploy`: Build and deploy to Cloudflare Pages via Wrangler.
 - `bun test`: Run automated unit tests.
 - `bun run check`: Run Biome lint and formatting checks.
 - `bun run format`: Auto-format source code with Biome.
@@ -127,7 +120,7 @@ Open [http://localhost:4321](http://localhost:4321) in your browser.
 
 ```bash
 bun run build
-bunx wrangler deploy
+bunx wrangler pages deploy dist
 ```
 
 ---

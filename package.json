@@ -10,7 +10,7 @@
     "format": "biome format --write .",
     "lint": "biome lint .",
     "test": "bun test",
-    "deploy": "bun run build && wrangler deploy"
+    "deploy": "bun run build && wrangler pages deploy dist"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
@@ -25,7 +25,6 @@
     "typescript": "^7"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^14.3.4",
     "@astrojs/react": "^7.0.1",
     "astro": "^7.3.8",
     "class-variance-authority": "^0.7.1",

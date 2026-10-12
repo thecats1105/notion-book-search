@@ -56,21 +56,14 @@
 |    노션 페이지    | --------------------------------> |  임베드 위젯 클라이언트 |
 |  (/embed 블록)   |                                   |  (브라우저 Hash 파싱) |
 +------------------+                                   +--------------------+
-                                                                  |
-                                                HTTPS API 프록시 요청 | (Headers/Body)
-                                                                  v
-                                                       +--------------------+
-                                                       |  Cloudflare Pages  |
-                                                       |     SSR 프록시     |
-                                                       +--------------------+
                                                           |        |       |
                                          +----------------+        |       +----------------+
                                          v                         v                        v
                                   [ 카카오 책 검색 ]         [ Google Books ]           [ Notion API ]
 ```
 
-1. **URL Hash 저장**: 위젯 URL 생성 시 모든 설정은 URL-safe Base64로 인코딩되어 `#config=...` 해시 형태로 생성됩니다. 브라우저는 서버로 해시를 보내지 않습니다.
-2. **무상태 Cloudflare Pages 프록시**: 브라우저의 CORS 제한을 우회하기 위해 `/api/search`, `/api/notion/schema`, `/api/notion/check`, `/api/notion/save` 프록시 엔드포인트를 거쳐 각 API로 안전하게 중계됩니다. 서버에는 어떤 키도 영구 저장되지 않습니다.
+1. **100% 순수 클라이언트 사이드 정적 웹**: 백엔드 서버나 Workers 없이 100% 정적 페이지로 빌드되어 브라우저에서 직접 카카오 검색, Google Books, Notion API와 통신합니다.
+2. **URL Hash 저장**: 위젯 URL 생성 시 모든 설정은 URL-safe Base64로 인코딩되어 `#config=...` 해시 형태로 보관됩니다. 브라우저는 서버로 해시를 전송하지 않으므로 API 키와 노션 토큰이 어떤 호스팅 서버에도 노출되지 않습니다.
 
 ---
 
@@ -102,9 +95,9 @@ bun run dev
 ### 명령어 목록
 
 - `bun run dev`: Astro 로컬 개발 서버 실행
-- `bun run build`: Cloudflare Pages용 프로덕션 빌드
+- `bun run build`: Cloudflare Pages용 정적 프로덕션 빌드
 - `bun run preview`: 빌드 결과물 로컬 미리보기
-- `bun run deploy`: 빌드 후 Wrangler를 통해 Cloudflare로 즉시 배포
+- `bun run deploy`: 빌드 후 Wrangler를 통해 Cloudflare Pages로 즉시 배포
 - `bun test`: 유닛 테스트 실행 (도서 썸네일 변환, 인코딩/디코딩, 노션 ID 파싱)
 - `bun run check`: Biome 코드 검사 (린트 및 포맷)
 - `bun run format`: Biome 자동 포맷팅
@@ -128,7 +121,7 @@ bun run dev
 
 ```bash
 bun run build
-bunx wrangler deploy
+bunx wrangler pages deploy dist
 ```
 
 ---

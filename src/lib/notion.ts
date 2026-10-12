@@ -35,11 +35,7 @@ export async function uploadImageToNotion(
 ): Promise<string | null> {
   if (!token || !imageUrl) return null
   try {
-    const imgRes = await fetch(imageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; NotionBookSearch/1.0)'
-      }
-    })
+    const imgRes = await fetch(imageUrl)
     if (!imgRes.ok) return null
 
     const contentType = imgRes.headers.get('content-type') || 'image/jpeg'

@@ -26,8 +26,10 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { encodeConfig } from '@/lib/config-codec'
+import { searchGoogleBooks } from '@/lib/google'
 import { type Language, translations } from '@/lib/i18n'
-import { cleanNotionId } from '@/lib/notion'
+import { searchKakaoBooks } from '@/lib/kakao'
+import { cleanNotionId, fetchNotionDatabaseSchema } from '@/lib/notion'
 import type {
   AppConfig,
   NotionPropertyMapping,
@@ -171,16 +173,7 @@ export function UrlGenerator() {
     setSchemaResult(null)
 
     try {
-      const res = await fetch('/api/notion/schema', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          notionToken: cleanToken,
-          dataSourceId: cleanId
-        })
-      })
-
-      const data = (await res.json()) as NotionSchemaResult
+      const data = await fetchNotionDatabaseSchema(cleanToken, cleanId)
       setSchemaResult(data)
 
       if (data.success) {
@@ -283,17 +276,8 @@ export function UrlGenerator() {
     setIsTestingKakao(true)
     setKakaoTestStatus(null)
     try {
-      const res = await fetch('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: '클린 코드',
-          source: 'kakao',
-          kakaoApiKey: kakaoKey.trim()
-        })
-      })
-      const data = await res.json()
-      if (res.ok && data.items?.length > 0) {
+      const data = await searchKakaoBooks('클린 코드', kakaoKey.trim(), 1, 10)
+      if (data.items?.length > 0) {
         setKakaoTestStatus({
           success: true,
           message:
@@ -321,17 +305,13 @@ export function UrlGenerator() {
     setIsTestingGoogle(true)
     setGoogleTestStatus(null)
     try {
-      const res = await fetch('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: 'Refactoring',
-          source: 'google',
-          googleApiKey: googleKey.trim()
-        })
-      })
-      const data = await res.json()
-      if (res.ok && data.items?.length > 0) {
+      const data = await searchGoogleBooks(
+        'Refactoring',
+        googleKey.trim(),
+        1,
+        10
+      )
+      if (data.items?.length > 0) {
         setGoogleTestStatus({
           success: true,
           message:

@@ -20,6 +20,8 @@ import { Dialog, DialogClose, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { decodeConfig } from '@/lib/config-codec'
 import { type Language, translations } from '@/lib/i18n'
+import { checkNotionBookExists, saveBookToNotion } from '@/lib/notion'
+import { searchBooks } from '@/lib/search'
 import type { BookItem } from '@/types/book'
 import type {
   AppConfig,
@@ -141,19 +143,14 @@ export function EmbedWidget({
     setHasSearched(true)
 
     try {
-      const res = await fetch('/api/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: trimmed,
-          source: activeTab,
-          kakaoApiKey: config?.kakaoApiKey,
-          googleApiKey: config?.googleApiKey
-        })
+      const data = await searchBooks({
+        query: trimmed,
+        source: activeTab,
+        kakaoApiKey: config?.kakaoApiKey,
+        googleApiKey: config?.googleApiKey
       })
 
-      const data = await res.json()
-      if (!res.ok && (!data.items || data.items.length === 0)) {
+      if (data.error && (!data.items || data.items.length === 0)) {
         setErrorMessage(data.error || 'Failed to search books')
         setBooks([])
       } else {
@@ -189,17 +186,12 @@ export function EmbedWidget({
 
     setIsCheckingDuplicate(true)
     try {
-      const res = await fetch('/api/notion/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          notionToken: config.notionApiKey,
-          dataSourceId: targetId,
-          isbnProperty: config.properties.isbn,
-          isbn: book.isbn
-        })
-      })
-      const data = (await res.json()) as NotionCheckResult
+      const data = await checkNotionBookExists(
+        config.notionApiKey,
+        targetId,
+        config.properties.isbn,
+        book.isbn
+      )
       setDuplicateStatus(data)
     } catch {
       // Ignore check failure silently
@@ -219,22 +211,19 @@ export function EmbedWidget({
     const origin = typeof window !== 'undefined' ? window.location.origin : ''
 
     try {
-      const res = await fetch('/api/notion/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          notionToken: config.notionApiKey,
-          dataSourceId: targetId,
-          propertyMapping: config.properties,
-          book: selectedBook,
+      const data = await saveBookToNotion(
+        config.notionApiKey,
+        targetId,
+        config.properties,
+        selectedBook,
+        {
           template: selectedTemplate,
           origin,
           insertBodyImage: config.insertBodyImage !== false
-        })
-      })
+        }
+      )
 
-      const data = await res.json()
-      if (res.ok && data.success) {
+      if (data.success) {
         setSaveSuccessUrl(data.pageUrl || '')
         setDuplicateStatus({
           exists: true,
