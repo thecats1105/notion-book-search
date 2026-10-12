@@ -19,6 +19,7 @@ export const translations = {
     searchPlaceholder: '책 제목, 저자, 또는 ISBN으로 검색...',
     searchButton: '검색',
     searchingText: '도서를 검색하고 있습니다...',
+    searchingGoogleBackground: '해외(Google) 도서 추가 검색 중...',
     initialSearchTitle: '등록할 책을 검색해보세요',
     initialSearchDesc:
       '위 검색창에 책 제목이나 저자, ISBN을 입력하면 바로 찾을 수 있습니다.',
@@ -152,6 +153,7 @@ export const translations = {
     searchPlaceholder: 'Search by title, author, or ISBN...',
     searchButton: 'Search',
     searchingText: 'Searching books across providers...',
+    searchingGoogleBackground: 'Searching Google Books in background...',
     initialSearchTitle: 'Search for your next book',
     initialSearchDesc:
       'Type a book title, author, or ISBN above to find and add it to your Notion library.',

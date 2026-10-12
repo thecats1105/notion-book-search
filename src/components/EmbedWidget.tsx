@@ -51,6 +51,8 @@ export function EmbedWidget({
     'all'
   )
   const [isLoading, setIsLoading] = React.useState(false)
+  const [isSearchingGoogle, setIsSearchingGoogle] = React.useState(false)
+  const currentSearchId = React.useRef(0)
   const [books, setBooks] = React.useState<BookItem[]>([])
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [hasSearched, setHasSearched] = React.useState(false)
@@ -138,33 +140,65 @@ export function EmbedWidget({
     const trimmed = query.trim()
     if (!trimmed) return
 
+    const searchId = ++currentSearchId.current
     setIsLoading(true)
+    setIsSearchingGoogle(activeTab === 'all')
     setErrorMessage(null)
     setHasSearched(true)
+    setBooks([])
 
     try {
-      const data = await searchBooks({
-        query: trimmed,
-        source: activeTab,
-        kakaoApiKey: config?.kakaoApiKey,
-        googleApiKey: config?.googleApiKey
-      })
+      const data = await searchBooks(
+        {
+          query: trimmed,
+          source: activeTab,
+          kakaoApiKey: config?.kakaoApiKey,
+          googleApiKey: config?.googleApiKey
+        },
+        {
+          onPartialResult: (items, source) => {
+            if (searchId !== currentSearchId.current) return
 
-      if (data.error && (!data.items || data.items.length === 0)) {
-        setErrorMessage(data.error || 'Failed to search books')
-        setBooks([])
-      } else {
-        setBooks(data.items || [])
-        if (data.items?.length === 0 && data.error) {
-          setErrorMessage(data.error)
+            if (source === 'kakao') {
+              // Kakao returned first: display results immediately and hide main spinner
+              setBooks(items)
+              setIsLoading(false)
+            } else if (source === 'google') {
+              // Google returned: merge and append new items without duplicates
+              setBooks(prev => {
+                const seen = new Set(prev.map(b => b.isbn).filter(Boolean))
+                const uniqueGoogle = items.filter(
+                  b => !b.isbn || !seen.has(b.isbn)
+                )
+                return [...prev, ...uniqueGoogle]
+              })
+              setIsLoading(false)
+              setIsSearchingGoogle(false)
+            }
+          }
+        }
+      )
+
+      if (searchId === currentSearchId.current) {
+        setIsSearchingGoogle(false)
+        if (data.items.length === 0) {
+          setBooks([])
+          if (data.error) {
+            setErrorMessage(data.error)
+          }
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setErrorMessage(`Search error: ${msg}`)
-      setBooks([])
+      if (searchId === currentSearchId.current) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setErrorMessage(`Search error: ${msg}`)
+        setIsSearchingGoogle(false)
+      }
     } finally {
-      setIsLoading(false)
+      if (searchId === currentSearchId.current) {
+        setIsLoading(false)
+        setIsSearchingGoogle(false)
+      }
     }
   }
 
@@ -408,6 +442,13 @@ export function EmbedWidget({
           <div className="mb-4 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0" />
             <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {isSearchingGoogle && (
+          <div className="mb-3 px-3 py-1.5 rounded-lg bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 text-xs flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-blue-600 dark:text-blue-400" />
+            <span>{t.searchingGoogleBackground}</span>
           </div>
         )}
 

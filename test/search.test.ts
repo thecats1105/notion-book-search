@@ -15,4 +15,10 @@ describe('searchBooks helper', () => {
     expect(res.totalCount).toBe(0)
     expect(res.error).toBe('Kakao API key is required for Kakao search')
   })
+
+  it('should support callbacks parameter without throwing', async () => {
+    const callbacks = { onPartialResult: () => {} }
+    const res = await searchBooks({ query: '   ' }, callbacks)
+    expect(res.items).toEqual([])
+  })
 })

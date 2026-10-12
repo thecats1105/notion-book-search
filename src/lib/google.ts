@@ -29,14 +29,13 @@ export async function searchGoogleBooks(
   }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 2500)
+  const timer = setTimeout(() => controller.abort(), 4000)
 
   try {
     const response = await fetch(endpoint.toString(), {
       method: 'GET',
       signal: controller.signal
-    })
-    clearTimeout(timer)
+    }).finally(() => clearTimeout(timer))
 
     if (!response.ok) {
       const errorText = await response.text()

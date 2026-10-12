@@ -10,19 +10,26 @@ export interface SearchBooksParams {
   googleApiKey?: string
 }
 
+export interface SearchBooksCallbacks {
+  onPartialResult?: (items: BookItem[], source: 'kakao' | 'google') => void
+}
+
 export interface SearchBooksResult {
   items: BookItem[]
   totalCount: number
   error?: string
 }
 
-export async function searchBooks({
-  query,
-  page = 1,
-  source = 'all',
-  kakaoApiKey,
-  googleApiKey
-}: SearchBooksParams): Promise<SearchBooksResult> {
+export async function searchBooks(
+  {
+    query,
+    page = 1,
+    source = 'all',
+    kakaoApiKey,
+    googleApiKey
+  }: SearchBooksParams,
+  callbacks?: SearchBooksCallbacks
+): Promise<SearchBooksResult> {
   const cleanQuery = query?.trim()
   const cleanPage = Math.max(1, page || 1)
   const cleanKakaoKey = kakaoApiKey?.trim()
@@ -40,72 +47,69 @@ export async function searchBooks({
         error: 'Kakao API key is required for Kakao search'
       }
     }
-    return searchKakaoBooks(cleanQuery, cleanKakaoKey, cleanPage, 16)
+    const res = await searchKakaoBooks(cleanQuery, cleanKakaoKey, cleanPage, 16)
+    callbacks?.onPartialResult?.(res.items, 'kakao')
+    return res
   }
 
   if (source === 'google') {
-    return searchGoogleBooks(cleanQuery, cleanGoogleKey, cleanPage, 16)
-  }
-
-  // Fast path for 'all' mode:
-  // When only Kakao key is configured (the most common setup), query Kakao directly.
-  // This responds in ~50ms without waiting for Google Books rate limits.
-  if (cleanKakaoKey && !cleanGoogleKey) {
-    const kakaoRes = await searchKakaoBooks(
+    const res = await searchGoogleBooks(
       cleanQuery,
-      cleanKakaoKey,
+      cleanGoogleKey,
       cleanPage,
       16
     )
-    if (kakaoRes.items.length > 0) {
-      return kakaoRes
-    }
-    const googleRes = await searchGoogleBooks(
-      cleanQuery,
-      undefined,
-      cleanPage,
-      16
-    )
-    if (googleRes.items.length > 0) {
-      return googleRes
-    }
-    return kakaoRes
+    callbacks?.onPartialResult?.(res.items, 'google')
+    return res
   }
 
-  // Default 'all': query both in parallel
-  const promises: [
-    Promise<{ items: BookItem[]; totalCount: number; error?: string }>,
-    Promise<{ items: BookItem[]; totalCount: number; error?: string }>
-  ] = [
-    cleanKakaoKey
-      ? searchKakaoBooks(cleanQuery, cleanKakaoKey, cleanPage, 12)
-      : Promise.resolve({ items: [], totalCount: 0 }),
-    searchGoogleBooks(cleanQuery, cleanGoogleKey, cleanPage, 12)
-  ]
-
-  const [kakaoResult, googleResult] = await Promise.allSettled(promises)
-
-  const kakaoItems =
-    kakaoResult.status === 'fulfilled' ? kakaoResult.value.items : []
-  const googleItems =
-    googleResult.status === 'fulfilled' ? googleResult.value.items : []
-
-  // Build deduplicated list: Kakao domestic books prioritized
+  // When source is 'all':
+  // Query both Kakao and Google concurrently.
+  // As soon as Kakao finishes (~50ms), stream Kakao results immediately via onPartialResult!
+  // When Google finishes, stream Google results via onPartialResult!
   const seenIsbns = new Set<string>()
   const merged: BookItem[] = []
 
-  for (const item of kakaoItems) {
-    if (item.isbn) seenIsbns.add(item.isbn)
-    merged.push(item)
-  }
-
-  for (const item of googleItems) {
-    if (item.isbn && seenIsbns.has(item.isbn)) {
-      continue // Skip duplicate ISBN
+  const kakaoPromise = (async () => {
+    if (!cleanKakaoKey) return { items: [] as BookItem[], totalCount: 0 }
+    const res = await searchKakaoBooks(cleanQuery, cleanKakaoKey, cleanPage, 12)
+    if (res.items.length > 0) {
+      for (const item of res.items) {
+        if (item.isbn) seenIsbns.add(item.isbn)
+        merged.push(item)
+      }
+      callbacks?.onPartialResult?.(res.items, 'kakao')
     }
-    if (item.isbn) seenIsbns.add(item.isbn)
-    merged.push(item)
-  }
+    return res
+  })()
+
+  const googlePromise = (async () => {
+    const res = await searchGoogleBooks(
+      cleanQuery,
+      cleanGoogleKey,
+      cleanPage,
+      12
+    )
+    if (res.items.length > 0) {
+      const uniqueGoogle: BookItem[] = []
+      for (const item of res.items) {
+        if (!item.isbn || !seenIsbns.has(item.isbn)) {
+          if (item.isbn) seenIsbns.add(item.isbn)
+          uniqueGoogle.push(item)
+          merged.push(item)
+        }
+      }
+      if (uniqueGoogle.length > 0) {
+        callbacks?.onPartialResult?.(uniqueGoogle, 'google')
+      }
+    }
+    return res
+  })()
+
+  const [kakaoResult, googleResult] = await Promise.allSettled([
+    kakaoPromise,
+    googlePromise
+  ])
 
   const totalCount =
     (kakaoResult.status === 'fulfilled' ? kakaoResult.value.totalCount : 0) +
